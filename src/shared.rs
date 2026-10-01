@@ -226,8 +226,8 @@ impl fmt::Display for CommandContent {
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.flag {
-            CommandFlag::JSON => write!(f, "j/{}", &self.data),
-            CommandFlag::Empty => write!(f, "/{}", &self.data),
+            CommandFlag::JSON => write!(f, "j/{}", self.data),
+            CommandFlag::Empty => write!(f, "/{}", self.data),
         }
     }
 }
