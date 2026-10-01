@@ -1,49 +1,40 @@
-# Hyprland-rs
+# Hyprland-rs (next)
 
-[![Crates.io](https://img.shields.io/crates/v/hyprland)](https://crates.io/crates/hyprland)
-![Crates.io](https://img.shields.io/crates/d/hyprland)
 [![Crates.io](https://img.shields.io/crates/l/hyprland)](https://www.gnu.org/licenses/gpl-3.0.html)
-[![docs.rs](https://img.shields.io/docsrs/hyprland)](https://docs.rs/hyprland)
 [![Hyprland](https://img.shields.io/badge/Made%20for-Hyprland-blue)](https://github.com/hyprwm/Hyprland)
-[![Discord](https://img.shields.io/discord/1055990214411169892?label=discord)](https://discord.gg/zzWqvcKRMy)
 
 An unofficial rust wrapper for Hyprland's IPC
 
-## Help Wanted!
-We need help with developing the next version of hyprland-rs `0.4`,
-if you know how to do the things in <https://github.com/hyprland-community/hyprland-rs/milestone/4>
-contributions in those areas would be greatly appreciated!
+## This is a fork
 
-## Disclaimer
+`hyprland-rs-next` is maintained independently of
+[hyprland-community/hyprland-rs](https://github.com/hyprland-community/hyprland-rs).
+It tracks upstream `master` and finishes the legacy (`.conf`) code path that
+upstream is removing.
 
-If something doesn't work, doesn't matter what,
-make sure you are on the latest version (or commit) of Hyprland before making an issue!
+One Hyprland binary serves both config grammars and picks at runtime, so
+`dispatch`, `keyword::set` and `config::binds` work on a `.conf` config and
+are dead on a `.lua` one, where `hyprctl dispatch` evaluates its argument as
+Lua source. The goal here is to make both paths complete and correct, then
+add a runtime probe that picks the right one automatically, so this crate
+keeps working on either config until the legacy path is finally dropped.
 
-## Getting started!
+Fixes landed so far: `Position` was discarding its Y coordinate, so
+`moveactive 10 20` emitted `moveactive 10 10`; `WorkspaceOptions` labels were
+swapped; `changefloatingmode` reported the inverted value;
+`Screencast::monitor` was permanently false; and three dispatchers produced
+malformed bind lines.
 
-Let's get started with Hyprland-rs!
+**The Lua dispatch path does not work yet**, in this fork or upstream. That
+is the next piece of work.
 
-### Adding to your project
-
-Add the code below to the dependencies section of your Cargo.toml file!
-
-```toml
-hyprland = "0.4.0-beta.3"
-```
-
-### Reading the docs
-
-Hyprland-rs has a ton of types (and some really long ones)! Its important you know how the ones you will be using work!
-The docs can be found at [docs.rs/hyprland](https://docs.rs/hyprland)
-
-#### Master version
-
-If Hyprland-rs is broken (or other reason) and is taking too long for a release to come out,
-you can use the master branch in Cargo (will not allow the crate to be published to `crates.io`):
+To depend on it:
 
 ```toml
-hyprland = { git = "https://github.com/hyprland-community/hyprland-rs", branch = "master" }
+hyprland = { git = "https://github.com/romanstingler/hyprland-rs-next", branch = "master" }
 ```
+
+Upstream remains at `hyprland = "0.4.0"`. See [CHANGELOG notes](https://github.com/romanstingler/hyprland-rs-next/releases) for what is fixed.
 
 ### What this crate provides
 
@@ -60,4 +51,4 @@ This crate provides 8 modules (+1 for shared things)
 
 ## Example Usage
 
-Check the examples in the [`examples` directory](https://github.com/hyprland-community/hyprland-rs/tree/master/examples)
+Check the examples in the [`examples` directory](https://github.com/romanstingler/hyprland-rs-next/tree/master/examples)

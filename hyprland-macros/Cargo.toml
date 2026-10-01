@@ -5,8 +5,8 @@ version.workspace = true
 license.workspace = true
 readme = "README.md"
 edition = "2021"
-homepage = "https://github.com/hyprland-community/hyprland-rs/tree/master/hyprland-macros"
-repository = "https://github.com/hyprland-community/hyprland-rs"
+homepage = "https://github.com/romanstingler/hyprland-rs-next/tree/master/hyprland-macros"
+repository = "https://github.com/romanstingler/hyprland-rs-next"
 
 [package.metadata.nix]
 build = true
