@@ -22,6 +22,7 @@ pub use wallpaper_listing::WallpaperListing;
 pub use wallpaper_mode::WallpaperMode;
 
 /// Response from hyprpaper.
+#[non_exhaustive]
 pub enum Response {
     /// Keyword was accepted.
     Ok,

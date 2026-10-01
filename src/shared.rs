@@ -116,6 +116,7 @@ fn ser_spec_opt(opt: &Option<String>) -> String {
 /// This enum holds workspace data
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Display, PartialOrd, Ord)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum WorkspaceType {
     /// A named workspace
     Regular(
@@ -178,6 +179,7 @@ pub(crate) fn get_hypr_path() -> crate::Result<PathBuf> {
 
 /// This enum defines the possible command flags that can be used.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum CommandFlag {
     /// The JSON flag.
     #[default]
@@ -254,6 +256,7 @@ pub use command;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 #[allow(missing_docs)]
 /// Enum for mod keys used in bind combinations
+#[non_exhaustive]
 pub enum Mod {
     #[display("SUPER")]
     SUPER,

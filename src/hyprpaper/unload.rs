@@ -1,4 +1,5 @@
 /// Unload a wallpaper from memory.
+#[non_exhaustive]
 pub enum Unload {
     /// Unload the wallpaper at this path.
     Path(String),

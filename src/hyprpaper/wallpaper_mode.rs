@@ -1,5 +1,6 @@
 /// The desired fill mode of the wallpaper.
 // #[derive(Default)]
+#[non_exhaustive]
 pub enum WallpaperMode {
     // /// Cover all of the screen, keeping aspect ratio but potentially cutting of
     // /// at some edges.

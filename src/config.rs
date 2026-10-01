@@ -16,6 +16,7 @@ pub mod binds {
 
     /// Type for a key held by a bind
     #[derive(Debug, Clone, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum Key<'a> {
         /// Variant for if the bind holds a modded key
         Mod(
@@ -66,6 +67,7 @@ pub mod binds {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
     #[allow(non_camel_case_types)]
     /// Enum for bind flags
+    #[non_exhaustive]
     pub enum Flag {
         /// Works when screen is locked
         #[display("l")]

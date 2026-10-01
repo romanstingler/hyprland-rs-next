@@ -23,6 +23,7 @@ use std::string::ToString;
 
 /// This enum is for identifying a window
 #[derive(Debug, Clone, Display)]
+#[non_exhaustive]
 pub enum WindowIdentifier<'a> {
     /// The address of a window
     #[display("address:{_0}")]
@@ -52,6 +53,7 @@ pub enum WindowIdentifier<'a> {
 
 /// This enum holds the fullscreen types
 #[derive(Debug, Clone, Display)]
+#[non_exhaustive]
 pub enum FullscreenType {
     /// Fills the whole screen
     #[display("0")]
@@ -67,6 +69,7 @@ pub enum FullscreenType {
 /// This enum holds the params to the [DispatchType::ToggleFullscreenState] dispatcher
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum FullscreenState {
     Current = -1,
     None = 0,
@@ -84,6 +87,7 @@ impl std::fmt::Display for FullscreenState {
 /// This enum holds directions, typically used for moving
 #[derive(Debug, Clone, Display)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum Direction {
     #[display("u")]
     Up,
@@ -97,6 +101,7 @@ pub enum Direction {
 
 /// This enum is used for resizing and moving windows precisely
 #[derive(Debug, Clone, Display)]
+#[non_exhaustive]
 pub enum Position {
     /// A delta in pixels
     #[display("{_0} {_1}")]
@@ -115,6 +120,7 @@ pub enum Position {
 /// This enum holds a direction for cycling
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Display)]
+#[non_exhaustive]
 pub enum CycleDirection {
     #[display("")]
     Next,
@@ -125,6 +131,7 @@ pub enum CycleDirection {
 /// This enum holds a direction for switch windows in a group
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Display)]
+#[non_exhaustive]
 pub enum WindowSwitchDirection {
     #[display("b")]
     Back,
@@ -136,6 +143,7 @@ pub enum WindowSwitchDirection {
 
 /// This enum is used for identifying monitors
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum MonitorIdentifier<'a> {
     /// The monitor that is to the specified direction of the active one
     Direction(Direction),
@@ -165,6 +173,7 @@ impl std::fmt::Display for MonitorIdentifier<'_> {
 /// This enum holds corners
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Corner {
     BottomLeft = 0,
     BottomRight = 1,
@@ -174,6 +183,7 @@ pub enum Corner {
 
 /// This enum holds options that are applied to the current workspace
 #[derive(Debug, Clone, Display)]
+#[non_exhaustive]
 pub enum WorkspaceOptions {
     /// Makes all windows pseudo tiled
     #[display("allpseudo")]
@@ -207,6 +217,7 @@ impl std::fmt::Display for FirstEmpty {
 
 /// This enum is for identifying workspaces that also includes the special workspace
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[non_exhaustive]
 pub enum WorkspaceIdentifierWithSpecial<'a> {
     /// The workspace Id
     Id(WorkspaceId),
@@ -261,6 +272,7 @@ pub(super) mod fmt {
 
 /// This enum is for identifying workspaces
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum WorkspaceIdentifier<'a> {
     /// The workspace Id
     Id(WorkspaceId),
@@ -300,6 +312,7 @@ impl std::fmt::Display for WorkspaceIdentifier<'_> {
 
 /// This enum is the params to [DispatchType::MoveWindow] dispatcher
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum WindowMove<'a> {
     /// Moves the window to a specified monitor
     Monitor(MonitorIdentifier<'a>),
@@ -310,6 +323,7 @@ pub enum WindowMove<'a> {
 /// This enum holds the actions that can be applied to a tag
 #[derive(Debug, Clone, Display)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum TagAction {
     #[display("+")]
     Add,
@@ -321,6 +335,7 @@ pub enum TagAction {
 
 /// This enum holds the signals
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum SignalType {
     /// Hangup detected on controlling terminal
     SIGHUP = 1,
@@ -394,6 +409,7 @@ impl std::fmt::Display for SignalType {
 
 #[derive(Debug, Clone, Copy, Display)]
 /// This enum holds the params to the [DispatchType::MoveToRoot] dispatcher
+#[non_exhaustive]
 pub enum MoveToRootParam {
     /// Maximize the window in its current subtree
     #[display("")]
@@ -405,6 +421,7 @@ pub enum MoveToRootParam {
 
 /// This enum holds the zheight variants
 #[derive(Debug, Clone, Copy, Display)]
+#[non_exhaustive]
 pub enum ZOrder {
     /// Bring the active window to top of the stack
     #[display("top")]
@@ -416,6 +433,7 @@ pub enum ZOrder {
 
 /// This enum holds the params to the [DispatchType::Submap] dispatcher
 #[derive(Debug, Clone, Copy, Display)]
+#[non_exhaustive]
 pub enum SubmapParam<'a> {
     /// Go back to global submap
     #[display("reset")]
@@ -427,6 +445,7 @@ pub enum SubmapParam<'a> {
 
 /// This enum holds every dispatcher
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum DispatchType<'a> {
     /// This lets you use dispatchers not supported by hyprland-rs yet, please make issues before
     /// using
@@ -655,6 +674,7 @@ pub enum DispatchType<'a> {
 /// Enum used for options with a binary on/off state
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum BinaryState {
     #[display("on")]
     On,
@@ -666,6 +686,7 @@ pub enum BinaryState {
 
 /// Enum used with [DispatchType::LockGroups], to determine how to lock/unlock
 #[derive(Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub enum LockType {
     /// Lock Group
     #[display("lock")]
@@ -680,6 +701,7 @@ pub enum LockType {
 
 /// Param for [DispatchType::SwapWithMaster] dispatcher
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[non_exhaustive]
 pub enum SwapWithMasterParam {
     /// New focus is the new master window
     #[display("master")]
@@ -697,6 +719,7 @@ pub enum SwapWithMasterParam {
 
 /// Param for [DispatchType::FocusMaster] dispatcher
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[non_exhaustive]
 pub enum FocusMasterParam {
     /// Focus stays at master, (even if it was selected before)
     #[display("master")]
@@ -711,6 +734,7 @@ pub enum FocusMasterParam {
 
 /// Param for some master layout dispatchers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[non_exhaustive]
 pub enum MasterLoopParam {
     /// Allow looping through the pile
     #[display("loop")]
@@ -722,6 +746,7 @@ pub enum MasterLoopParam {
 
 /// Param for [DispatchType::OrientationCycle] dispatcher
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[non_exhaustive]
 pub enum OrientationParam {
     /// Set orientation to left
     #[display("left")]
@@ -742,6 +767,7 @@ pub enum OrientationParam {
 
 /// Param for split ratio changes
 #[derive(Debug, Clone, Copy, PartialEq, Display)]
+#[non_exhaustive]
 pub enum FloatValue {
     /// Change relative to current factor
     #[display("{}", _0)]

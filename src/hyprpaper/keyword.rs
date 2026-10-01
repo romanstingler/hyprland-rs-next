@@ -2,6 +2,7 @@ use super::{Error, Preload, Reload, Response, Unload, Wallpaper, WallpaperListin
 use crate::error::HyprError;
 
 /// The hyprpaper keyword, used to interact with hyprpaper.
+#[non_exhaustive]
 pub enum Keyword {
     /// Preload a wallpaper into memory.
     Preload(Preload),

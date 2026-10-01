@@ -111,6 +111,7 @@ pub mod output {
 
     /// Output backend types
     #[derive(Debug, MDisplay, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum OutputBackends {
         /// The wayland output backend
         #[display("wayland")]
@@ -202,6 +203,7 @@ pub mod switch_xkb_layout {
 
     /// The types of Cmds used by [switch_xkb_layout]
     #[derive(Debug, MDisplay, Clone, Copy, PartialEq, Eq)]
+    #[non_exhaustive]
     pub enum SwitchXKBLayoutCmdTypes {
         /// Next input
         #[display("next")]
@@ -295,6 +297,7 @@ pub mod notify {
     #[allow(missing_docs)]
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     #[repr(i8)]
+    #[non_exhaustive]
     pub enum Icon {
         NoIcon = -1,
         Warning = 0,
@@ -439,6 +442,7 @@ pub mod set_prop {
 
     /// Type that represents a prop
     #[derive(MDisplay, Clone, PartialEq)]
+    #[non_exhaustive]
     pub enum PropType {
         /// The animation style
         #[display("animationstyle {_0}")]

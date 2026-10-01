@@ -1,4 +1,5 @@
 /// A monitor on which to apply a wallpaper, see [`crate::hyprpaper::Wallpaper`].
+#[non_exhaustive]
 pub enum Monitor {
     /// A monitor port, such as "DP-1".
     Port(String),

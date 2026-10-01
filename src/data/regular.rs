@@ -63,6 +63,7 @@ impl WorkspaceBasic {
 /// This enum provides the different monitor transforms
 #[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq, Copy)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum Transforms {
     /// No transform
     Normal = 0,
@@ -318,6 +319,7 @@ create_data_struct!(
 /// This struct holds information for a client/window fullscreen mode
 #[derive(Serialize_repr, Deserialize_repr, Debug, Clone, PartialEq, Eq, Copy)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum FullscreenMode {
     /// Normal window
     None = 0,
@@ -527,6 +529,7 @@ pub struct Keyboard {
 
 /// A enum that holds the types of tablets
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TabletType {
     /// The TabletPad type of tablet
     #[serde(rename = "tabletPad")]
@@ -539,6 +542,7 @@ pub enum TabletType {
 /// A enum to match what the tablet belongs to
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum TabletBelongsTo {
     /// The belongsTo data if the tablet is of type TabletPad
     TabletPad {
@@ -683,6 +687,7 @@ create_data_struct!(
 
 /// Animation styles
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AnimationStyle {
     /// Slide animation
     Slide,
@@ -736,6 +741,7 @@ impl From<String> for AnimationStyle {
 }
 /// Bezier identifier
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BezierIdent {
     /// No bezier specified
     #[serde(rename = "")]

@@ -121,6 +121,7 @@ impl TryFrom<&str> for HyprRect {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Display)]
 /// A parseable value type for custom options
+#[non_exhaustive]
 pub enum Custom {
     /// Color Variant for Custom field
     HyprColor(HyprColor),
@@ -334,6 +335,7 @@ pub(crate) struct OptionRaw {
 
 /// This enum holds the possible values of a keyword/option
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[non_exhaustive]
 pub enum OptionValue {
     /// A integer (64-bit)
     Int(i64),

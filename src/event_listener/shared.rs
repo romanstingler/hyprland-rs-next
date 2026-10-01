@@ -545,6 +545,7 @@ pub struct GroupToggledEventData {
 
 /// This enum holds every event type
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Event {
     /// An unknown event
     Unknown(UnknownEventData),

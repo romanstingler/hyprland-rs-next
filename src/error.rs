@@ -1,5 +1,6 @@
 #[derive(Debug, derive_more::Display)]
 /// Error that unifies different error types used by Hyprland-rs
+#[non_exhaustive]
 pub enum HyprError {
     /// Error coming from serde
     SerdeError(serde_json::Error),
