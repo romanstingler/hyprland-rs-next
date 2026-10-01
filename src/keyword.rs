@@ -345,6 +345,8 @@ pub enum OptionValue {
     Custom(Custom),
     /// A Vector of 2 ints
     Vec2([i64; 2]),
+    /// A boolean
+    Bool(bool),
     /// Could not parse value
     Unknown(String),
 }
@@ -357,6 +359,7 @@ impl std::fmt::Display for OptionValue {
             OptionValue::String(s) => f.write_fmt(format_args!("{}", s)),
             OptionValue::Custom(custom) => f.write_fmt(format_args!("{}", custom)),
             OptionValue::Vec2(v) => f.write_fmt(format_args!("{} {}", v[0], v[1])),
+            OptionValue::Bool(b) => f.write_fmt(format_args!("{b}")),
             OptionValue::Unknown(s) => f.write_fmt(format_args!("Unknown Value type ({})", s)),
         }
     }
@@ -417,6 +420,7 @@ impl TryFrom<&OptionRaw> for OptionValue {
                     }
                     OptionValue::Unknown(raw.json.to_string())
                 }
+                "bool" => match_unknown!(raw.json, v.as_bool(), Bool),
                 // `css` is a whitespace-separated gap string of 1, 2 or 4 ints
                 // (e.g. "3 3 3 3"), which is the same shape as `custom`
                 "css" => match_unknown!(
@@ -594,18 +598,39 @@ mod tests {
         serde_json::from_str(payload).unwrap()
     }
 
-    /// `bool` needs a new enum variant, which is a semver break, so it lands
-    /// in 0.5.0. Until then bool options stay `Unknown` rather than being
-    /// misrepresented as some other variant.
+    /// `misc:disable_hyprland_logo` and most other bool options used to come
+    /// back `Unknown`. This is a semver break (a new variant on a public enum
+    /// with no `#[non_exhaustive]`), which is why it did not go into 0.4.0.
     #[test]
-    fn option_value_still_reports_bool_as_unknown_in_0_4() {
-        assert!(matches!(
-            OptionValue::try_from(&raw(
-                r#"{"option":"misc:disable_hyprland_logo","set":true,"bool":true}"#
-            ))
-            .unwrap(),
-            OptionValue::Unknown(_)
-        ));
+    fn option_value_parses_bool() {
+        for (payload, expected) in [
+            (
+                r#"{"option":"misc:disable_hyprland_logo","set":true,"bool":true}"#,
+                true,
+            ),
+            (
+                r#"{"option":"decoration:blur:enabled","set":true,"bool":false}"#,
+                false,
+            ),
+            (
+                r#"{"option":"input:touchpad:natural_scroll","set":true,"bool":true}"#,
+                true,
+            ),
+        ] {
+            let v = OptionValue::try_from(&raw(payload)).unwrap();
+            assert!(
+                matches!(v, OptionValue::Bool(b) if b == expected),
+                "payload {payload} gave {v:?}"
+            );
+        }
+    }
+
+    /// `bool` must round-trip through Display, since `Keyword::set` writes
+    /// the value back as a string.
+    #[test]
+    fn option_value_bool_displays_as_a_bare_word() {
+        assert_eq!(OptionValue::Bool(true).to_string(), "true");
+        assert_eq!(OptionValue::Bool(false).to_string(), "false");
     }
 
     /// `general:gaps_in` used to come back `Unknown`.
