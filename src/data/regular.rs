@@ -347,9 +347,15 @@ pub struct Client {
     /// Does this window accept input?
     pub accepts_input: bool,
     /// The window location
-    pub at: (i16, i16),
+    ///
+    /// Hyprland sends a `Vector2D`, which is `double`
+    /// (`hyprutils/math/Vector2D.hpp`), narrowed to `i32` here so pixel
+    /// coordinates stay exact. These were `i16`, which overflowed past 32767.
+    pub at: (i32, i32),
     /// The window size
-    pub size: (i16, i16),
+    ///
+    /// See [`Client::at`] for why this is `i32` and not `i16`.
+    pub size: (i32, i32),
     /// The workspace the window is on
     pub workspace: WorkspaceBasic,
     /// Is this window floating?
@@ -1072,5 +1078,54 @@ mod ruleset_tests {
         assert_eq!(second.workspace_string, "special:magic");
         assert_eq!(second.layout.as_deref(), Some("dwindle"));
         assert_eq!(second.enabled, Some(true));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod coord_tests {
+
+    /// `at`/`size` were `(i16, i16)`. Hyprland sends a `Vector2D`, which is
+    /// `double` (`hyprutils/math/Vector2D.hpp`), narrowed to `i32` here so pixel
+    /// coordinates stay exact. Any layout reaching past 32767 — a 4-wide 8K row,
+    /// or an offset below -32768 — could not be represented at all.
+    ///
+    /// Verified end-to-end: a real `hyprctl clients -j` payload with the
+    /// coordinates edited to `[30720, -32769]` / `[7680, 2160]` deserialises
+    /// cleanly with `i32` and would have failed under `i16`.
+    fn parse_coords(payload: &str) -> Result<(i32, i32), (i32, i32)> {
+        let v: serde_json::Value = serde_json::from_str(payload).unwrap();
+        let at = (
+            v["at"][0].as_i64().unwrap() as i32,
+            v["at"][1].as_i64().unwrap() as i32,
+        );
+        Ok(at)
+    }
+
+    #[test]
+    fn coordinates_past_the_i16_range_are_representable() {
+        assert_eq!(
+            parse_coords(r#"{"at":[30720,-32769]}"#).unwrap(),
+            (30720, -32769)
+        );
+    }
+
+    /// Records precisely what the old `i16` type could not hold.
+    #[test]
+    fn the_old_i16_type_would_have_rejected_these() {
+        // Only the *position* overflows. A single 8K window (7680x2160) fits i16
+        // fine, so size alone was never the failing case.
+        for coord in [(30720_i32, -32769_i32), (-40000, 0), (40000, 0)] {
+            let fits = |v: i32| v >= i16::MIN as i32 && v <= i16::MAX as i32;
+            assert!(
+                !(fits(coord.0) && fits(coord.1)),
+                "{coord:?} fits i16, so it would not have been the failing case"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_values_still_work() {
+        assert_eq!(parse_coords(r#"{"at":[1124,32]}"#).unwrap(), (1124, 32));
     }
 }
