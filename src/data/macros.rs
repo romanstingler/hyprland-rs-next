@@ -193,7 +193,7 @@ macro_rules! create_data_struct {
         doc: $doc:literal
     ) => {
         #[doc = $doc]
-        #[derive(Debug)]
+        #[derive(Debug, Clone, PartialEq)]
         pub struct $name(HashMap<$key, $value>);
 
         implement_iterators!(
@@ -225,4 +225,22 @@ macro_rules! create_data_struct {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod table_arm_tests {
+
+    /// The `table` arm derived only `Debug`, so `Layers` — the sole type built
+    /// from it — was not `Clone` or `PartialEq`, unlike every hand-written data
+    /// struct in the crate.
+    #[test]
+    fn the_table_arm_produces_clone_types() {
+        fn needs_clone<T: Clone>() {}
+        fn needs_partial_eq<T: PartialEq>() {}
+
+        needs_clone::<crate::data::Layers>();
+        needs_clone::<crate::data::Monitors>();
+        needs_clone::<crate::data::Clients>();
+        needs_partial_eq::<crate::data::Layers>();
+    }
 }
