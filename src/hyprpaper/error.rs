@@ -1,5 +1,5 @@
 /// An unexpected response from interacting with hyprpaper.
-#[derive(Debug, derive_more::Display)]
+#[derive(Debug, PartialEq, Eq, derive_more::Display)]
 #[non_exhaustive]
 pub enum Error {
     /// The keyword was not executed correctly, for example by misformed input

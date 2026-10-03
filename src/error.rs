@@ -76,6 +76,35 @@ impl From<std::string::FromUtf8Error> for HyprError {
 
 impl error::Error for HyprError {}
 
+/// Hand-written because two of the wrapped types are not `PartialEq`:
+/// `serde_json::Error` and `std::io::Error` both impl `Error` but not `Eq`.
+/// This was written by hand rather than derived for exactly that reason.
+impl PartialEq for HyprError {
+    fn eq(&self, other: &Self) -> bool {
+        use HyprError::*;
+        match (self, other) {
+            (SerdeError(a), SerdeError(b)) => a.to_string() == b.to_string(),
+            (IoError(a), IoError(b)) => a.kind() == b.kind() && a.to_string() == b.to_string(),
+            (FromUtf8Error(a), FromUtf8Error(b)) => a == b,
+            #[cfg(feature = "hyprpaper")]
+            (Hyprpaper(a), Hyprpaper(b)) => a == b,
+
+            (InvalidHyprColorFormat, InvalidHyprColorFormat)
+            | (InvalidHyprGradiantFormat, InvalidHyprGradiantFormat)
+            | (InvalidOptionValue, InvalidOptionValue) => true,
+
+            (NotOkDispatch(a), NotOkDispatch(b))
+            | (InvalidOptionKey(a), InvalidOptionKey(b))
+            | (Internal(a), Internal(b))
+            | (Other(a), Other(b)) => a == b,
+
+            _ => false,
+        }
+    }
+}
+
+impl Eq for HyprError {}
+
 /// Internal macro to return a Hyprland error
 macro_rules! hypr_err {
     ($fmt:literal) => {
@@ -94,3 +123,47 @@ macro_rules! hypr_err {
 
 pub(crate) use hypr_err;
 use std::{error, io};
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    /// The point of `PartialEq`: assert equality directly instead of `matches!`.
+    #[test]
+    fn errors_compare_by_value() {
+        assert_eq!(HyprError::other("boom"), HyprError::other("boom"));
+        assert_ne!(HyprError::other("boom"), HyprError::other("bang"));
+        assert_eq!(
+            HyprError::NotOkDispatch("no".into()),
+            HyprError::NotOkDispatch("no".into())
+        );
+        assert_eq!(HyprError::InvalidOptionValue, HyprError::InvalidOptionValue);
+    }
+
+    /// Different variants are never equal, even with identical payloads.
+    #[test]
+    fn different_variants_are_unequal() {
+        assert_ne!(HyprError::other("x"), HyprError::Internal("x".into()));
+        assert_ne!(
+            HyprError::InvalidOptionKey("k".into()),
+            HyprError::Other("k".into())
+        );
+    }
+
+    #[test]
+    fn io_errors_compare_by_kind_and_message() {
+        let a = HyprError::IoError(io::Error::new(io::ErrorKind::NotFound, "gone"));
+        let b = HyprError::IoError(io::Error::new(io::ErrorKind::NotFound, "gone"));
+        let c = HyprError::IoError(io::Error::new(io::ErrorKind::PermissionDenied, "gone"));
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn utf8_errors_compare() {
+        let bad = || std::string::String::from_utf8(vec![0xff]).unwrap_err();
+        assert_eq!(HyprError::from(bad()), HyprError::from(bad()));
+    }
+}
