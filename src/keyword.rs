@@ -42,7 +42,7 @@ impl std::fmt::Display for HyprColor {
     }
 }
 
-/// A Gradiant made up of HyprColor(s) and an angle
+/// A Gradient made up of HyprColor(s) and an angle
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct HyprGradient {
     /// First gradiant color
@@ -124,7 +124,7 @@ impl TryFrom<&str> for HyprRect {
 pub enum Custom {
     /// Color Variant for Custom field
     HyprColor(HyprColor),
-    /// Gradiant Variant for Custom field
+    /// Gradient Variant for Custom field
     HyprGradient(HyprGradient),
     /// A general rect made of top, right, bottom, left
     HyprRect(HyprRect),
@@ -264,19 +264,19 @@ impl TryFrom<&str> for HyprGradient {
         let mut s = s.split(" ");
         let color0 = HyprColor::try_from(
             s.next()
-                .ok_or(crate::HyprError::InvalidHyprGradiantFormat)?,
+                .ok_or(crate::HyprError::InvalidHyprGradientFormat)?,
         )?;
         let mut color1 = None;
         let c1_angle = s
             .next()
-            .ok_or(crate::HyprError::InvalidHyprGradiantFormat)?;
+            .ok_or(crate::HyprError::InvalidHyprGradientFormat)?;
         if c1_angle.contains("deg") {
             let tmp = c1_angle
                 .strip_suffix("deg")
-                .ok_or(crate::HyprError::InvalidHyprGradiantFormat)?;
+                .ok_or(crate::HyprError::InvalidHyprGradientFormat)?;
             a = Some(
                 tmp.parse::<u32>()
-                    .map_err(|_| crate::HyprError::InvalidHyprGradiantFormat)?,
+                    .map_err(|_| crate::HyprError::InvalidHyprGradientFormat)?,
             );
         } else {
             color1 = Some(HyprColor::try_from(c1_angle)?)
@@ -287,19 +287,19 @@ impl TryFrom<&str> for HyprGradient {
             None => {
                 let c1_angle = s
                     .next()
-                    .ok_or(crate::HyprError::InvalidHyprGradiantFormat)?;
+                    .ok_or(crate::HyprError::InvalidHyprGradientFormat)?;
                 let tmp = c1_angle
                     .strip_suffix("deg")
-                    .ok_or(crate::HyprError::InvalidHyprGradiantFormat)?;
+                    .ok_or(crate::HyprError::InvalidHyprGradientFormat)?;
                 match tmp.parse::<u32>() {
                     Ok(i) => i,
-                    Err(_) => return Err(crate::HyprError::InvalidHyprGradiantFormat),
+                    Err(_) => return Err(crate::HyprError::InvalidHyprGradientFormat),
                 }
             }
         };
 
         if s.next().is_some() {
-            return Err(crate::HyprError::InvalidHyprGradiantFormat);
+            return Err(crate::HyprError::InvalidHyprGradientFormat);
         }
 
         Ok(HyprGradient {
@@ -349,7 +349,7 @@ pub enum OptionValue {
     Float(f64),
     /// A string
     String(String),
-    /// A hyprland Color or Gradiant
+    /// A hyprland Color or Gradient
     Custom(Custom),
     /// A Vector of 2 ints
     Vec2([i64; 2]),

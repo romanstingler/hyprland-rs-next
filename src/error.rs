@@ -9,7 +9,7 @@ pub enum HyprError {
     /// Error from failing to parse HyprColor
     InvalidHyprColorFormat,
     /// Error from failing to parse HyprGradient
-    InvalidHyprGradiantFormat,
+    InvalidHyprGradientFormat,
     /// Error that occurs when parsing UTF-8 string
     FromUtf8Error(std::string::FromUtf8Error),
     /// Dispatcher returned non `ok` value
@@ -40,7 +40,7 @@ impl HyprError {
             Self::FromUtf8Error(e) => Ok(Self::FromUtf8Error(e.clone())),
             Self::NotOkDispatch(s) => Ok(Self::NotOkDispatch(s.clone())),
             Self::InvalidHyprColorFormat => Ok(Self::InvalidHyprColorFormat),
-            Self::InvalidHyprGradiantFormat => Ok(Self::InvalidHyprGradiantFormat),
+            Self::InvalidHyprGradientFormat => Ok(Self::InvalidHyprGradientFormat),
             #[cfg(feature = "hyprpaper")]
             Self::Hyprpaper(_) => Err(self),
             Self::InvalidOptionKey(key) => Ok(Self::InvalidOptionKey(key.clone())),
@@ -74,7 +74,21 @@ impl From<std::string::FromUtf8Error> for HyprError {
     }
 }
 
-impl error::Error for HyprError {}
+impl error::Error for HyprError {
+    /// Was left as the default `None`, so `serde_json::Error` and `io::Error`
+    /// lost their cause chain and `anyhow`-style reporting printed only the
+    /// wrapper. The unit variants have no source, so they return `None`.
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            HyprError::SerdeError(e) => Some(e),
+            HyprError::IoError(e) => Some(e),
+            HyprError::FromUtf8Error(e) => Some(e),
+            #[cfg(feature = "hyprpaper")]
+            HyprError::Hyprpaper(e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 /// Hand-written because two of the wrapped types are not `PartialEq`:
 /// `serde_json::Error` and `std::io::Error` both impl `Error` but not `Eq`.
@@ -90,7 +104,7 @@ impl PartialEq for HyprError {
             (Hyprpaper(a), Hyprpaper(b)) => a == b,
 
             (InvalidHyprColorFormat, InvalidHyprColorFormat)
-            | (InvalidHyprGradiantFormat, InvalidHyprGradiantFormat)
+            | (InvalidHyprGradientFormat, InvalidHyprGradientFormat)
             | (InvalidOptionValue, InvalidOptionValue) => true,
 
             (NotOkDispatch(a), NotOkDispatch(b))
@@ -159,6 +173,46 @@ mod tests {
         let c = HyprError::IoError(io::Error::new(io::ErrorKind::PermissionDenied, "gone"));
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    /// `Error::source()` used the default `None`, so the wrapped
+    /// `serde_json::Error` / `io::Error` / `FromUtf8Error` never surfaced.
+    #[test]
+    fn wrapped_errors_expose_their_source() {
+        fn source_of(e: &HyprError) -> Option<String> {
+            use std::error::Error;
+            e.source().map(|s| s.to_string())
+        }
+
+        let io = HyprError::from(io::Error::new(io::ErrorKind::NotFound, "no such file"));
+        assert_eq!(source_of(&io).as_deref(), Some("no such file"));
+
+        let serde: HyprError = serde_json::from_str::<i32>("not json").unwrap_err().into();
+        assert!(source_of(&serde).is_some(), "serde error lost its source");
+
+        let utf8: HyprError = String::from_utf8(vec![0xff]).unwrap_err().into();
+        assert!(source_of(&utf8).is_some(), "utf8 error lost its source");
+    }
+
+    /// Unit and string-only variants have nothing to point at.
+    #[test]
+    fn variants_without_a_wrapped_error_have_no_source() {
+        use std::error::Error;
+        for e in [
+            HyprError::InvalidOptionValue,
+            HyprError::InvalidHyprGradientFormat,
+            HyprError::other("boom"),
+            HyprError::Internal("i".into()),
+        ] {
+            assert!(e.source().is_none(), "unexpected source for {e:?}");
+        }
+    }
+
+    /// The rename from `InvalidHyprGradiantFormat` must not leave stragglers.
+    #[test]
+    fn the_gradient_variant_is_spelled_correctly() {
+        let e = HyprError::InvalidHyprGradientFormat;
+        assert!(e.to_string().contains("Gradient"), "got {e}");
     }
 
     #[test]
