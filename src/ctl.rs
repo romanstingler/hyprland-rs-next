@@ -234,11 +234,10 @@ pub mod switch_xkb_layout {
     /// Switch the xkb layout index for a keyboard
     #[cfg(any(feature = "async-lite", feature = "tokio"))]
     pub async fn call_async<Str: FDisplay>(
-        instance: &Instance,
         device: Str,
         cmd: SwitchXKBLayoutCmdTypes,
     ) -> crate::Result<()> {
-        instance_call_async(instance, device, cmd).await
+        instance_call_async(default_instance()?, device, cmd).await
     }
 
     /// Switch the xkb layout index for a keyboard
@@ -427,17 +426,44 @@ pub mod dismissnotify {
     }
 }
 
-/// A 8-bit color with a alpha channel
+/// An 8-bit color with an alpha channel
 #[derive(Debug, Copy, Clone, MDisplay, Constructor, PartialEq, Eq)]
 #[display("rgba({_0:02x}{_1:02x}{_2:02x}{_3:02x})")]
-pub struct Color(u8, u8, u8, u8);
+pub struct Color(pub u8, pub u8, pub u8, pub u8);
+
+impl Color {
+    /// The red channel
+    #[must_use]
+    pub const fn r(self) -> u8 {
+        self.0
+    }
+    /// The green channel
+    #[must_use]
+    pub const fn g(self) -> u8 {
+        self.1
+    }
+    /// The blue channel
+    #[must_use]
+    pub const fn b(self) -> u8 {
+        self.2
+    }
+    /// The alpha channel
+    #[must_use]
+    pub const fn a(self) -> u8 {
+        self.3
+    }
+}
 
 /// Provides things to setting props
 pub mod set_prop {
     use super::*;
 
+    /// Renders the trailing ` lock` for a setprop, with **no** trailing space
+    /// when unlocked. The previous helper returned `""`, which every caller
+    /// interpolated after a space, so `rounding 8 ` was emitted for the common
+    /// unlocked case.
     fn l(b: bool) -> &'static str {
-        if b { "lock" } else { "" }
+        if b { " lock" } else { "" }
     }
 
     /// Type that represents a prop
@@ -448,119 +474,119 @@ pub mod set_prop {
         #[display("animationstyle {_0}")]
         AnimationStyle(String),
         /// The roundness
-        #[display("rounding {_0} {}", l(*_1))]
+        #[display("rounding {_0}{}", l(*_1))]
         Rounding(
             i64,
             /// locked
             bool,
         ),
         /// Force no blur
-        #[display("forcenoblur {} {}", *_0 as u8, l(*_1))]
+        #[display("forcenoblur {}{}", *_0 as u8, l(*_1))]
         ForceNoBlur(
             bool,
             /// locked
             bool,
         ),
         /// Force opaque
-        #[display("forceopaque {} {}", *_0 as u8, l(*_1))]
+        #[display("forceopaque {}{}", *_0 as u8, l(*_1))]
         ForceOpaque(
             bool,
             /// locked
             bool,
         ),
         /// Force opaque overriden
-        #[display("forceopaqueoverriden {} {}", *_0 as u8, l(*_1))]
+        #[display("forceopaqueoverriden {}{}", *_0 as u8, l(*_1))]
         ForceOpaqueOverriden(
             bool,
             /// locked
             bool,
         ),
         /// Force allow input
-        #[display("forceallowsinput {} {}", *_0 as u8, l(*_1))]
+        #[display("forceallowsinput {}{}", *_0 as u8, l(*_1))]
         ForceAllowsInput(
             bool,
             /// locked
             bool,
         ),
         /// Force no animations
-        #[display("forcenoanims {} {}", *_0 as u8, l(*_1))]
+        #[display("forcenoanims {}{}", *_0 as u8, l(*_1))]
         ForceNoAnims(
             bool,
             /// locked
             bool,
         ),
         /// Force no border
-        #[display("forcenoborder {} {}", *_0 as u8, l(*_1))]
+        #[display("forcenoborder {}{}", *_0 as u8, l(*_1))]
         ForceNoBorder(
             bool,
             /// locked
             bool,
         ),
         /// Force no shadow
-        #[display("forcenoshadow {} {}", *_0 as u8, l(*_1))]
+        #[display("forcenoshadow {}{}", *_0 as u8, l(*_1))]
         ForceNoShadow(
             bool,
             /// locked
             bool,
         ),
         /// Allow for windoe dancing?
-        #[display("windowdancecompat {} {}", *_0 as u8, l(*_1))]
+        #[display("windowdancecompat {}{}", *_0 as u8, l(*_1))]
         WindowDanceCompat(
             bool,
             /// locked
             bool,
         ),
         /// Allow for overstepping max size
-        #[display("nomaxsize {} {}", *_0 as u8, l(*_1))]
+        #[display("nomaxsize {}{}", *_0 as u8, l(*_1))]
         NoMaxSize(
             bool,
             /// locked
             bool,
         ),
         /// Dim around?
-        #[display("dimaround {} {}", *_0 as u8, l(*_1))]
+        #[display("dimaround {}{}", *_0 as u8, l(*_1))]
         DimAround(
             bool,
             /// locked
             bool,
         ),
         /// Makes the next setting be override instead of multiply
-        #[display("alphaoverride {} {}", *_0 as u8, l(*_1))]
+        #[display("alphaoverride {}{}", *_0 as u8, l(*_1))]
         AlphaOverride(
             bool,
             /// locked
             bool,
         ),
         /// The alpha
-        #[display("alpha {_0} {}", l(*_1))]
+        #[display("alpha {_0}{}", l(*_1))]
         Alpha(
             f32,
             /// locked
             bool,
         ),
         /// Makes the next setting be override instead of multiply
-        #[display("alphainactiveoverride {} {}", *_0 as u8, l(*_1))]
+        #[display("alphainactiveoverride {}{}", *_0 as u8, l(*_1))]
         AlphaInactiveOverride(
             bool,
             /// locked
             bool,
         ),
         /// The alpha for inactive
-        #[display("alphainactive {_0} {}", l(*_1))]
+        #[display("alphainactive {_0}{}", l(*_1))]
         AlphaInactive(
             f32,
             /// locked
             bool,
         ),
         /// The active border color
-        #[display("alphabordercolor {_0} {}", l(*_1))]
+        #[display("alphabordercolor {_0}{}", l(*_1))]
         ActiveBorderColor(
             Color,
             /// locked
             bool,
         ),
         /// The inactive border color
-        #[display("inalphabordercolor {_0} {}", l(*_1))]
+        #[display("inalphabordercolor {_0}{}", l(*_1))]
         InactiveBorderColor(
             Color,
             /// locked

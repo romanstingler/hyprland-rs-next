@@ -10,8 +10,25 @@ pub mod binds {
     use crate::default_instance;
     use crate::instance::Instance;
 
-    trait Join: IntoIterator {
+    pub(crate) trait Join {
         fn join(&self) -> String;
+    }
+
+    /// One blanket impl instead of four near-identical ones. The old set had a
+    /// copy for `Vec<Mod>`, `&[Mod]`, `Vec<Flag>` and `&[Flag]`; all four bodies
+    /// were byte-identical, and every type involved is `Display`.
+    impl<T, U> Join for T
+    where
+        T: std::ops::Deref<Target = [U]> + ?Sized,
+        U: std::fmt::Display,
+    {
+        fn join(&self) -> String {
+            let mut buf = String::new();
+            for i in self.iter() {
+                buf.push_str(&i.to_string());
+            }
+            buf
+        }
     }
 
     /// Type for a key held by a bind
@@ -43,26 +60,6 @@ pub mod binds {
     }
 
     pub use crate::shared::Mod;
-
-    impl Join for Vec<Mod> {
-        fn join(&self) -> String {
-            let mut buf = String::new();
-            for i in self {
-                buf.push_str(&i.to_string());
-            }
-            buf
-        }
-    }
-
-    impl Join for &[Mod] {
-        fn join(&self) -> String {
-            let mut buf = String::new();
-            for i in *self {
-                buf.push_str(&i.to_string());
-            }
-            buf
-        }
-    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
     #[allow(non_camel_case_types)]
@@ -99,26 +96,6 @@ pub mod binds {
         /// Bypasses the app's requests to inhibit keybinds.
         #[display("p")]
         p,
-    }
-
-    impl Join for Vec<Flag> {
-        fn join(&self) -> String {
-            let mut buf = String::new();
-            for f in self {
-                buf.push_str(&f.to_string());
-            }
-            buf
-        }
-    }
-
-    impl Join for &[Flag] {
-        fn join(&self) -> String {
-            let mut buf = String::new();
-            for f in *self {
-                buf.push_str(&f.to_string());
-            }
-            buf
-        }
     }
 
     /// A struct used for indentifying bindings
@@ -464,4 +441,33 @@ fn test_binds() {
         Err(e) => panic!("Error occured: {e}"), // Note to greppers: this is in a test!
     };
     assert_eq!(built_bind, "SUPER,v,togglefloating");
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod join_tests {
+    use crate::config::binds::{Flag, Join as _};
+    use crate::shared::Mod;
+
+    /// Four byte-identical `Join` impls collapsed into one blanket impl. These
+    /// pin the output for all four original receiver types so the refactor is
+    /// behaviour-preserving, not merely compiling.
+    #[test]
+    fn join_is_unchanged_for_every_original_receiver() {
+        let mods: Vec<Mod> = vec![Mod::SUPER, Mod::SHIFT];
+        let flags: Vec<Flag> = vec![Flag::l, Flag::e];
+
+        assert_eq!(mods.join(), "SUPERSHIFT");
+        assert_eq!(mods.as_slice().join(), "SUPERSHIFT");
+        assert_eq!(flags.join(), "le");
+        assert_eq!(flags.as_slice().join(), "le");
+    }
+
+    #[test]
+    fn joining_nothing_yields_an_empty_string() {
+        let mods: Vec<Mod> = vec![];
+        let flags: &[Flag] = &[];
+        assert_eq!(mods.join(), "");
+        assert_eq!(flags.join(), "");
+    }
 }
