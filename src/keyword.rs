@@ -362,8 +362,8 @@ pub enum OptionValue {
 impl std::fmt::Display for OptionValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OptionValue::Int(i) => f.write_fmt(format_args!("{:0}", i)),
-            OptionValue::Float(fl) => f.write_fmt(format_args!("{:0}", fl)),
+            OptionValue::Int(i) => f.write_fmt(format_args!("{}", i)),
+            OptionValue::Float(fl) => f.write_fmt(format_args!("{}", fl)),
             OptionValue::String(s) => f.write_fmt(format_args!("{}", s)),
             OptionValue::Custom(custom) => f.write_fmt(format_args!("{}", custom)),
             OptionValue::Vec2(v) => f.write_fmt(format_args!("{} {}", v[0], v[1])),
@@ -798,6 +798,20 @@ mod conversion_tests {
             OptionValue::from("3 5".to_owned()),
             OptionValue::String(_)
         ));
+    }
+
+    /// `{:0}` is a zero-pad flag with no width — it does nothing. Removed.
+    /// `Float(7.0)` renders `"7"` and that is **correct**: hyprlang parses the
+    /// value with `std::stof` (`src/config.cpp:479`, CONFIGDATATYPE_FLOAT),
+    /// which accepts an integer literal for a float option. The original claim
+    /// that Hyprland "may reject" it was never verified and is contradicted by
+    /// the source.
+    #[test]
+    fn floats_render_without_a_trailing_zero() {
+        assert_eq!(OptionValue::Float(7.0).to_string(), "7");
+        assert_eq!(OptionValue::Float(0.5).to_string(), "0.5");
+        assert_eq!(OptionValue::Float(-3.5).to_string(), "-3.5");
+        assert_eq!(OptionValue::Int(7).to_string(), "7");
     }
 
     /// Reading Hyprland's replies is a different path and must still accept the
