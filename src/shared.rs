@@ -1,6 +1,7 @@
 //! # The Shared Module
 //!
 //! This module provides shared private and public functions, structs, enum, and types
+use crate::error::hypr_err;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
@@ -240,13 +241,41 @@ impl Hash for WorkspaceType {
 pub(crate) fn get_hypr_path() -> crate::Result<PathBuf> {
     let mut buf = if let Some(runtime_path) = env::var_os("XDG_RUNTIME_DIR") {
         std::path::PathBuf::from(runtime_path)
-    } else if let Ok(uid) = env::var("UID") {
-        std::path::PathBuf::from("/run/user/".to_owned() + &uid)
     } else {
-        hypr_err!("Could not find XDG_RUNTIME_DIR or UID");
+        fallback_runtime_dir()?
     };
     buf.push("hypr");
     Ok(buf)
+}
+
+/// Reads the real uid from `/proc/self/status`.
+///
+/// Preferred over `libc::getuid`, which is an `unsafe fn` in that binding and the
+/// crate `forbid`s `unsafe_code` outside the `unsafe-impl` feature. The crate is
+/// Unix-only anyway (`std::os::unix::net::UnixStream`) and the path it builds is a
+/// systemd `/run/user` path, so Linux is already assumed.
+fn real_uid() -> Option<u32> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("Uid:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// Used when `XDG_RUNTIME_DIR` is unset.
+///
+/// This was `env::var("UID")`, but `UID` is a *shell* variable, not an environment
+/// one: `env` shows no `UID=`, and fish does not define it at all. The fallback
+/// therefore never fired for any child process, and `get_hypr_path` returned an
+/// error instead. Ask the kernel instead.
+fn fallback_runtime_dir() -> crate::Result<PathBuf> {
+    match real_uid() {
+        Some(uid) => Ok(PathBuf::from(format!("/run/user/{uid}"))),
+        None => hypr_err!("Could not find XDG_RUNTIME_DIR or determine the uid"),
+    }
 }
 
 /// This enum defines the possible command flags that can be used.
@@ -321,7 +350,6 @@ macro_rules! command {
         }
     }};
 }
-use crate::error::hypr_err;
 use crate::instance::Instance;
 pub use command;
 
@@ -444,5 +472,46 @@ mod workspace_type_tests {
             WorkspaceType::Special(Some("m".into())).to_string(),
             "special:m"
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod path_tests {
+    use super::*;
+
+    /// The old fallback read `env::var("UID")`, but `UID` is a shell variable and
+    /// not an environment one, so the branch was dead for every child process and
+    /// `get_hypr_path` errored out whenever `XDG_RUNTIME_DIR` was unset. This
+    /// asserts the fallback now produces a real path rather than an error.
+    ///
+    /// The crate `forbid`s `unsafe_code` outside the `unsafe-impl` feature, so the
+    /// test cannot call `libc::getuid` itself. It checks the shape instead: a
+    /// numeric uid segment. That is exactly what was missing before.
+    #[test]
+    fn the_fallback_produces_a_numeric_uid_path() {
+        let path = fallback_runtime_dir().unwrap();
+        let rest = path
+            .to_str()
+            .expect("path is utf-8")
+            .strip_prefix("/run/user/")
+            .expect("fallback should live under /run/user");
+        assert!(
+            !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()),
+            "expected a numeric uid, got {rest:?}"
+        );
+    }
+
+    #[test]
+    fn the_path_always_ends_in_hypr() {
+        assert!(get_hypr_path().unwrap().ends_with("hypr"));
+    }
+
+    /// With `XDG_RUNTIME_DIR` set on this machine, that value must be the one used.
+    #[test]
+    fn xdg_runtime_dir_takes_precedence() {
+        if let Ok(rd) = std::env::var("XDG_RUNTIME_DIR") {
+            assert_eq!(get_hypr_path().unwrap(), PathBuf::from(rd).join("hypr"));
+        }
     }
 }
