@@ -9,9 +9,7 @@ use std::{env, fmt};
 
 /// The address struct holds a address as a tuple with a single value
 /// and has methods to reveal the address in different data formats
-#[derive(
-    Debug, Deserialize, Serialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, derive_more::Display,
-)]
+#[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Display)]
 pub struct Address(String);
 impl Address {
     /// This creates a new address from a value that implements [ToString]
@@ -158,8 +156,7 @@ fn ser_spec_opt(opt: &Option<String>) -> String {
 }
 
 /// This enum holds workspace data
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Display, PartialOrd, Ord)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum WorkspaceType {
     /// A named workspace
@@ -168,11 +165,42 @@ pub enum WorkspaceType {
         String,
     ),
     /// The special workspace
-    #[display("{}", ser_spec_opt(_0))]
     Special(
         /// The name, if exists
         Option<String>,
     ),
+}
+
+impl fmt::Display for WorkspaceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WorkspaceType::Regular(name) => f.write_str(name),
+            WorkspaceType::Special(opt) => f.write_str(&ser_spec_opt(opt)),
+        }
+    }
+}
+
+impl Serialize for WorkspaceType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for WorkspaceType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+
+        // `Regular` must not be tried first: with `#[serde(untagged)]` it matched
+        // every string, so `special:magic` came back as `Regular("special:magic")`
+        // and `Special` was unreachable. The `special` prefix is the discriminator.
+        if s == "special" {
+            return Ok(WorkspaceType::Special(None));
+        }
+        if let Some(name) = s.strip_prefix("special:") {
+            return Ok(WorkspaceType::Special(Some(name.to_owned())));
+        }
+        Ok(WorkspaceType::Regular(s))
+    }
 }
 
 impl From<&WorkspaceType> for String {
@@ -349,5 +377,72 @@ mod tests {
         assert!(a != *"0x55b");
         assert_eq!(a, "0x55a");
         assert_eq!(a, String::from("0x55a"));
+    }
+}
+
+#[cfg(test)]
+mod workspace_type_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+
+    fn round_trip(s: &str) -> WorkspaceType {
+        let json = format!("\"{s}\"");
+        let parsed: WorkspaceType = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), json);
+        parsed
+    }
+
+    /// `#[serde(untagged)]` tried `Regular` first and it matches every string,
+    /// so `special:magic` deserialized as `Regular("special:magic")` and the
+    /// `Special` variant was unreachable.
+    #[test]
+    fn special_with_a_name_is_not_regular() {
+        assert_eq!(
+            round_trip("special:magic"),
+            WorkspaceType::Special(Some("magic".to_owned()))
+        );
+    }
+
+    #[test]
+    fn bare_special_is_special_with_no_name() {
+        assert_eq!(round_trip("special"), WorkspaceType::Special(None));
+    }
+
+    #[test]
+    fn a_named_special_workspace_round_trips() {
+        assert_eq!(
+            round_trip("special:audit-sp"),
+            WorkspaceType::Special(Some("audit-sp".to_owned()))
+        );
+    }
+
+    #[test]
+    fn ordinary_workspaces_stay_regular() {
+        for name in ["1", "example", "specialist", "my-special-thing", "spec"] {
+            assert_eq!(
+                round_trip(name),
+                WorkspaceType::Regular(name.to_owned()),
+                "{name} should be regular"
+            );
+        }
+    }
+
+    /// The prefix match must be exact, not a `contains`.
+    #[test]
+    fn only_the_exact_prefix_is_special() {
+        assert_eq!(
+            round_trip("not-special:x"),
+            WorkspaceType::Regular("not-special:x".to_owned())
+        );
+    }
+
+    #[test]
+    fn display_matches_the_wire_form() {
+        assert_eq!(WorkspaceType::Regular("1".into()).to_string(), "1");
+        assert_eq!(WorkspaceType::Special(None).to_string(), "special");
+        assert_eq!(
+            WorkspaceType::Special(Some("m".into())).to_string(),
+            "special:m"
+        );
     }
 }
