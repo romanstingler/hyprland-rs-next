@@ -539,8 +539,14 @@ impl UnknownEventData {
 pub struct GroupToggledEventData {
     /// The toggle status, `false` means the group was destroyed
     pub toggled: bool,
-    /// The window addresses associated with the group
-    pub window_addresses: Vec<Address>,
+    /// The address of the group's owner window.
+    ///
+    /// Hyprland emits exactly one address: `togglegroup>>{0|1},{addr_hex}`
+    /// (`src/desktop/view/Group.cpp`, both emission sites, the destroy one gated
+    /// on a non-null owner). This was a `Vec<Address>` split on `,` on the
+    /// assumption that the field was a list. It is not — and on an empty field
+    /// `split(",")` yielded `[""]`, producing the ghost `Address("0x")`.
+    pub window_address: Address,
 }
 
 /// This enum holds every event type
@@ -960,7 +966,7 @@ pub(crate) fn event_parser(event: &str) -> crate::Result<Vec<Event>> {
             })),
             ParsedEventType::ToggleGroup => Ok(Event::GroupToggled(GroupToggledEventData {
                 toggled: get![ref args;0] == "1",
-                window_addresses: get![ref args;1].split(",").map(Address::new).collect(),
+                window_address: Address::new(get![ref args;1]),
             })),
             ParsedEventType::MoveIntoGroup => {
                 Ok(Event::WindowMovedIntoGroup(Address::new(get![ref args;0])))
@@ -1024,5 +1030,47 @@ mod tests {
     #[test]
     fn zero_arg_events_do_not_panic() {
         let _ = event_parser("configreloaded>>").unwrap();
+    }
+}
+
+#[cfg(test)]
+mod group_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    fn parse(payload: &str) -> Event {
+        event_parser(payload).unwrap().remove(0)
+    }
+
+    /// Upstream sends `togglegroup>>{0|1},{addr_hex}` — one address, from
+    /// `src/desktop/view/Group.cpp`. The old `split(",")` treated the field as
+    /// a list and turned an empty field into the ghost `Address("0x")`.
+    #[test]
+    fn group_toggled_carries_the_owner_address() {
+        let Event::GroupToggled(d) = parse("togglegroup>>1,55a") else {
+            panic!("expected GroupToggled");
+        };
+        assert!(d.toggled);
+        assert_eq!(d.window_address, *"0x55a");
+    }
+
+    #[test]
+    fn group_destroyed_is_toggled_false() {
+        let Event::GroupToggled(d) = parse("togglegroup>>0,55a") else {
+            panic!("expected GroupToggled");
+        };
+        assert!(!d.toggled);
+        assert_eq!(d.window_address, *"0x55a");
+    }
+
+    /// An address is one token: it must not be split on `,` the way a list
+    /// would be.
+    #[test]
+    fn a_single_address_is_never_split_into_several() {
+        let Event::GroupToggled(d) = parse("togglegroup>>1,55a") else {
+            panic!("expected GroupToggled");
+        };
+        assert_eq!(d.window_address, *"0x55a");
     }
 }
