@@ -769,21 +769,6 @@ struct RawBezierIdent {
     pub name: String,
 }
 
-/// A bezier curve
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct Bezier {
-    ///. Name of the bezier
-    pub name: String,
-    /// X position of first point
-    pub x0: f32,
-    /// Y position of first point
-    pub y0: f32,
-    /// X position of second point
-    pub x1: f32,
-    /// Y position of second point
-    pub y1: f32,
-}
-
 /// A struct representing a animation
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct AnimationRaw {
