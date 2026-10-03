@@ -25,6 +25,50 @@ impl Address {
     }
 }
 
+impl AsRef<str> for Address {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for Address {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<Address> for String {
+    fn from(address: Address) -> Self {
+        address.0
+    }
+}
+
+impl From<&Address> for String {
+    fn from(address: &Address) -> Self {
+        address.0.clone()
+    }
+}
+
+impl PartialEq<str> for Address {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for Address {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<String> for Address {
+    fn eq(&self, other: &String) -> bool {
+        &self.0 == other
+    }
+}
+
 /// This trait provides a standardized way to get data
 pub trait HyprData {
     /// This method gets the data
@@ -268,4 +312,42 @@ pub enum Mod {
     CTRL,
     #[display("")]
     NONE,
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn address_normalises_the_prefix() {
+        assert_eq!(AsRef::<str>::as_ref(&Address::new("55a")), "0x55a");
+        assert_eq!(AsRef::<str>::as_ref(&Address::new("0x55a")), "0x55a");
+    }
+
+    /// The traits added so consumers are not forced through `.as_str()`.
+    #[test]
+    fn address_supports_the_obvious_conversions() {
+        let a = Address::new("55a");
+        let s: &str = a.as_ref();
+        assert_eq!(s, "0x55a");
+        assert_eq!(String::from(a.clone()), "0x55a");
+        assert_eq!(String::from(&a), "0x55a");
+    }
+
+    #[test]
+    fn address_derefs_to_str() {
+        let a = Address::new("55a");
+        assert_eq!(a.len(), 5);
+        assert!(a.starts_with("0x"));
+    }
+
+    #[test]
+    fn address_compares_against_str_and_string() {
+        let a = Address::new("55a");
+        assert!(a == *"0x55a");
+        assert!(a != *"0x55b");
+        assert_eq!(a, "0x55a");
+        assert_eq!(a, String::from("0x55a"));
+    }
 }
