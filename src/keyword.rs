@@ -21,7 +21,6 @@ use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 /// A Color made up of rgba values (0-255)
-#[repr(Rust, packed)]
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct HyprColor {
     /// Red Channel (0-255)
