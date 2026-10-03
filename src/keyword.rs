@@ -144,7 +144,14 @@ impl HyprColor {
     /// Try to convert from &str in the argb legacy format to HyprColor,
     /// e.g. 0xeeb3ff1a
     pub fn try_from_argb_str(s: &str) -> Option<Self> {
-        let s = s.trim().strip_prefix("0x").unwrap_or(s);
+        let s = s.trim();
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        // Hyprland writes colours as 6 (rrggbb) or 8 (rrggbbaa) hex digits.
+        // Any length was accepted, so `u32::from_str_radix("1", 16)` succeeded and
+        // `Keyword::set("k", "1")` silently became a nearly-transparent black.
+        if s.len() != 6 && s.len() != 8 {
+            return None;
+        }
         u32::from_str_radix(s, 16).ok().map(Self::from_argb_u32)
     }
 
@@ -377,11 +384,34 @@ impl IsString for String {}
 impl IsString for &str {}
 
 impl<Str: ToString + IsString> From<Str> for OptionValue {
+    /// Bare text becomes a [OptionValue::String]; it becomes a
+    /// [OptionValue::Custom] only when it is unambiguously a colour or geometry.
+    ///
+    /// This used to try [Custom::try_from] **first**, and because
+    /// [HyprColor::try_from_argb_str] accepted any hex length, `Keyword::set("k", "1")`
+    /// set a nearly-transparent black and `set("k", "deadbeef")` set a colour.
+    ///
+    /// Bare 6/8-digit hex is **not** auto-detected here, because
+    /// [std::fmt::Display] for [HyprColor] only ever emits `rgba(...)` — accepting
+    /// bare hex on input would be a form the crate cannot produce on output. Write
+    /// `rgba(deadbeef)` or `0xdeadbeef` for a colour. This is the *write* path only:
+    /// parsing Hyprland's replies goes through [Custom::try_from] directly and still
+    /// accepts the bare `ee1a1a1a` form Hyprland sends.
     fn from(str: Str) -> Self {
-        if let Ok(c) = Custom::try_from(str.to_string().as_str()) {
+        let s = str.to_string();
+        let t = s.trim();
+        let looks_custom = t.starts_with("rgb") || t.starts_with("0x") || {
+            // HyprRect: `Custom::try_from` only builds one from exactly four
+            // whitespace-separated integers, e.g. the css gap string "3 3 3 3".
+            // Two or three go down the gradient path and fail there.
+            let parts: Vec<&str> = t.split_whitespace().collect();
+            parts.len() == 4 && parts.iter().all(|p| p.parse::<i64>().is_ok())
+        };
+
+        if looks_custom && let Ok(c) = Custom::try_from(t) {
             OptionValue::Custom(c)
         } else {
-            OptionValue::String(str.to_string())
+            OptionValue::String(s)
         }
     }
 }
@@ -677,5 +707,111 @@ mod tests {
             OptionValue::try_from(&raw(r#"{"option":"x","set":true,"nonsense":1}"#)).unwrap(),
             OptionValue::Unknown(_)
         ));
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    /// `try_from_argb_str` accepted any hex length, so a one-digit string parsed
+    /// as a colour.
+    #[test]
+    fn short_hex_is_not_a_colour() {
+        assert!(HyprColor::try_from_argb_str("1").is_none());
+        assert!(HyprColor::try_from_argb_str("a").is_none());
+        assert!(HyprColor::try_from_argb_str("0").is_none());
+    }
+
+    #[test]
+    fn six_and_eight_digit_hex_are_colours() {
+        assert!(HyprColor::try_from_argb_str("ff00aa").is_some());
+        assert!(HyprColor::try_from_argb_str("ff00aa7f").is_some());
+        assert!(HyprColor::try_from_argb_str("0xff00aa").is_some());
+    }
+
+    /// The bug this fixes: `Keyword::set("k", "1")` silently set a colour.
+    #[test]
+    fn bare_numbers_stay_strings() {
+        assert!(matches!(
+            OptionValue::from("1".to_owned()),
+            OptionValue::String(_)
+        ));
+        assert!(matches!(
+            OptionValue::from("0.5".to_owned()),
+            OptionValue::String(_)
+        ));
+        assert!(matches!(
+            OptionValue::from("true".to_owned()),
+            OptionValue::String(_)
+        ));
+        assert!(matches!(
+            OptionValue::from(String::new()),
+            OptionValue::String(_)
+        ));
+    }
+
+    /// `"deadbeef"` is 8 valid hex digits but is far more likely to be a string
+    /// than a colour, and `Display` only ever emits `rgba(...)`.
+    #[test]
+    fn bare_hex_stays_a_string_unless_prefixed() {
+        assert!(matches!(
+            OptionValue::from("deadbeef".to_owned()),
+            OptionValue::String(_)
+        ));
+        assert!(matches!(
+            OptionValue::from("ff00aa7f".to_owned()),
+            OptionValue::String(_)
+        ));
+        assert!(matches!(
+            OptionValue::from("rgba(ff00aa7f)".to_owned()),
+            OptionValue::Custom(_)
+        ));
+        assert!(matches!(
+            OptionValue::from("0xff00aa".to_owned()),
+            OptionValue::Custom(_)
+        ));
+    }
+
+    #[test]
+    fn ordinary_words_stay_strings() {
+        for s in ["hello", "special", "dwindle", "Hyprland", "main"] {
+            assert!(
+                matches!(OptionValue::from(s.to_owned()), OptionValue::String(_)),
+                "{s} should stay a string"
+            );
+        }
+    }
+
+    /// A gap string is structured, so it stays auto-detected.
+    #[test]
+    fn gap_strings_are_rects() {
+        assert!(matches!(
+            OptionValue::from("3 3 3 3".to_owned()),
+            OptionValue::Custom(Custom::HyprRect(_))
+        ));
+        // Two or three integers are not a rect — `Custom::try_from` routes them
+        // to HyprGradient, which rejects them, so they stay strings.
+        assert!(matches!(
+            OptionValue::from("3 5".to_owned()),
+            OptionValue::String(_)
+        ));
+    }
+
+    /// Reading Hyprland's replies is a different path and must still accept the
+    /// bare `ee1a1a1a` form Hyprland sends.
+    #[test]
+    fn the_read_path_still_accepts_bare_hex() {
+        let raw: OptionRaw = serde_json::from_str(
+            r#"{"option":"decoration:shadow:color","set":true,"custom":"ee1a1a1a 0deg"}"#,
+        )
+        .unwrap();
+        let v = OptionValue::try_from(&raw).unwrap();
+        assert!(
+            matches!(v, OptionValue::Custom(Custom::HyprGradient(_))),
+            "got {v:?}"
+        );
     }
 }
