@@ -861,9 +861,25 @@ impl HyprData for Animations {
     }
 }
 
-// HACK: shadow and decorate are actually missing from the hyprctl json output for some reason
-// HACK: gaps_in and gaps_out are returned as arrays with 4 integers, even though Hyprland doesn't support per-side gaps
 /// The rules of an individual workspace, as returned by hyprctl json.
+///
+/// Every field is `Option`, which is what lets this tolerate Hyprland omitting a
+/// key or adding one: serde treats a missing `Option` as `None` and ignores
+/// unknown keys unless `deny_unknown_fields` is set. Verified — an all-`Option`
+/// struct deserialises from `{}` and from `{"zzz":1}` without error.
+///
+/// The two `HACK` comments that used to sit here claimed `shadow`/`decorate` were
+/// "missing from the hyprctl json output" and implied this struct could fail to
+/// deserialise. Both were wrong: the fields were present, and an all-`Option`
+/// struct cannot fail on a missing key. What *was* real is that several keys
+/// upstream emits were not modelled here at all — `workspaceName`, `workspaceId`,
+/// `floatGaps`, `onCreatedEmpty`, `defaultName`, `layout`, `layoutopts`,
+/// `animationStyle` and `enabled` — so their data was silently dropped. All are
+/// modelled now. Field list checked against `CWorkspaceRule`
+/// (`hyprwm/Hyprland` `src/config/shared/workspace/WorkspaceRule.hpp`, `v0.56.2`).
+///
+/// `gaps_in` / `gaps_out` really are returned as 4-integer arrays even though
+/// Hyprland has no per-side gaps; they are still `Vec<i64>` for that reason.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceRuleset {
     /// The name of the workspace
@@ -892,6 +908,33 @@ pub struct WorkspaceRuleset {
     pub decorate: Option<bool>,
     /// Is it persistent?
     pub persistent: Option<bool>,
+    /// The name of the workspace (upstream `m_workspaceName`)
+    #[serde(rename = "workspaceName")]
+    pub workspace_name: Option<String>,
+    /// The numeric id of the workspace (upstream `m_workspaceId`)
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Option<WorkspaceId>,
+    /// Gaps for floating windows (upstream `m_floatGaps`)
+    #[serde(rename = "floatGaps")]
+    pub float_gaps: Option<Vec<i64>>,
+    /// Command run when the workspace is created empty
+    /// (upstream `m_onCreatedEmptyRunCmd`)
+    #[serde(rename = "onCreatedEmptyRunCmd", alias = "onCreatedEmpty")]
+    pub on_created_empty: Option<String>,
+    /// The default name given to newly created workspaces (upstream `m_defaultName`)
+    #[serde(rename = "defaultName")]
+    pub default_name: Option<String>,
+    /// The layout this rule forces (upstream `m_layout`)
+    pub layout: Option<String>,
+    /// Layout options this rule forces (upstream `m_layoutopts`)
+    #[serde(rename = "layoutopts", alias = "layoutOpts")]
+    pub layoutopts: Option<HashMap<String, String>>,
+    /// The animation style this rule forces (upstream `m_animationStyle`)
+    #[serde(rename = "animationStyle")]
+    pub animation_style: Option<String>,
+    /// Is the rule enabled? (upstream `m_enabled`)
+    #[serde(alias = "isEnabled")]
+    pub enabled: Option<bool>,
 }
 
 create_data_struct!(
@@ -936,5 +979,98 @@ mod animation_tests {
             AnimationStyle::from("".to_string()),
             AnimationStyle::None
         ));
+    }
+}
+
+#[cfg(test)]
+mod ruleset_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    /// `WorkspaceRuleset` used to carry only 11 of the 20 keys Hyprland emits.
+    /// A payload with the newer keys must now round-trip.
+    #[test]
+    fn all_upstream_keys_parse() {
+        let payload = r#"{
+            "workspaceString": "special:magic",
+            "monitor": "DP-1",
+            "default": true,
+            "gapsIn": [3,3,3,3],
+            "gapsOut": [5,5,5,5],
+            "borderSize": 2,
+            "border": true,
+            "shadow": false,
+            "rounding": true,
+            "decorate": true,
+            "persistent": false,
+            "workspaceName": "magic",
+            "workspaceId": -98,
+            "floatGaps": [1,2,3,4],
+            "onCreatedEmptyRunCmd": "kitty",
+            "defaultName": "web",
+            "layout": "dwindle",
+            "layoutopts": {"fakeNoAlign": "true"},
+            "animationStyle": "popin 87%",
+            "enabled": true
+        }"#;
+        let r: WorkspaceRuleset = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(r.workspace_string, "special:magic");
+        assert_eq!(r.monitor.as_deref(), Some("DP-1"));
+        assert_eq!(r.default, Some(true));
+        assert_eq!(r.gaps_in.as_deref(), Some(&[3, 3, 3, 3][..]));
+        assert_eq!(r.float_gaps.as_deref(), Some(&[1, 2, 3, 4][..]));
+        assert_eq!(r.border_size, Some(2));
+        assert_eq!(r.shadow, Some(false));
+        assert_eq!(r.decorate, Some(true));
+        assert_eq!(r.workspace_name.as_deref(), Some("magic"));
+        assert_eq!(r.workspace_id, Some(-98));
+        assert_eq!(r.on_created_empty.as_deref(), Some("kitty"));
+        assert_eq!(r.default_name.as_deref(), Some("web"));
+        assert_eq!(r.layout.as_deref(), Some("dwindle"));
+        assert_eq!(
+            r.layoutopts
+                .as_ref()
+                .unwrap()
+                .get("fakeNoAlign")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(r.animation_style.as_deref(), Some("popin 87%"));
+        assert_eq!(r.enabled, Some(true));
+    }
+
+    /// The all-`Option` shape is what makes this type tolerant. If it ever stops
+    /// being all-`Option`, Hyprland omitting a key breaks every consumer.
+    #[test]
+    fn a_partial_payload_still_deserialises() {
+        let r: WorkspaceRuleset = serde_json::from_str(r#"{"workspaceString":"1"}"#).unwrap();
+        assert_eq!(r.workspace_string, "1");
+        assert!(r.monitor.is_none());
+        assert!(r.enabled.is_none());
+    }
+
+    /// Unknown keys are ignored, not rejected — no `deny_unknown_fields`.
+    #[test]
+    fn unknown_keys_are_ignored() {
+        let r: WorkspaceRuleset =
+            serde_json::from_str(r#"{"workspaceString":"1","somethingNew":true}"#).unwrap();
+        assert_eq!(r.workspace_string, "1");
+    }
+
+    /// Round-trip means the *data* survives, not the literal: every `None`
+    /// serialises as an explicit `null`, so a sparse payload comes back padded.
+    #[test]
+    fn round_trips_through_json() {
+        let payload = r#"{"workspaceString":"special:magic","layout":"dwindle","enabled":true}"#;
+        let first: WorkspaceRuleset = serde_json::from_str(payload).unwrap();
+        let second: WorkspaceRuleset =
+            serde_json::from_str(&serde_json::to_string(&first).unwrap()).unwrap();
+        assert_eq!(first, second);
+        // and the fields we set survive
+        assert_eq!(second.workspace_string, "special:magic");
+        assert_eq!(second.layout.as_deref(), Some("dwindle"));
+        assert_eq!(second.enabled, Some(true));
     }
 }
