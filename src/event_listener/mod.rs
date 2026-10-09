@@ -56,5 +56,15 @@ events! {
     GroupToggled => GroupToggledEventData, "a group was toggled", "the group toggle state was set to" => data;
     WindowMovedIntoGroup => Address, "a window was moved into a group", "a window was moved into a group with the address of" => addr;
     WindowMovedOutOfGroup => Address, "a window was moved out of a group", "a window was moved out of a group with the address of" => addr;
+    Bell => Option<Address>, "a bell is rung", "bell rung" => addr;
+    WindowMinimized => WindowMinimizedEventData, "a window is minimized or unminimized", "window minimized state changed to" => data;
+    WindowKilled => Address, "a window is killed", "window killed with the address of" => addr;
+    Custom => String, "a custom event is sent", "custom event sent with the data of" => data;
+    WorkspaceIdChanged => WorkspaceIdChangedEventData, "a workspace's id is changed", "workspace id changed" => data;
+    SpecialRemovedV2 => String, "a monitor's special workspace is removed", "special workspace removed" => monitor;
+    ChangedSpecialV2 => ChangedSpecialV2EventData, "a monitor's special workspace is changed", "special workspace changed" => data;
+    ActiveMonitorChangedV2 => MonitorV2EventData, "the active monitor is changed", "active monitor changed" => data;
+    MonitorRemovedV2 => MonitorRemovedEventData, "a monitor is removed", "monitor removed" => data;
+    ScreencastV2 => ScreencastV2EventData, "the screencast state of a client is changed", "screencast state changed" => data;
     Unknown => UnknownEventData, "the state of some unknown event changed", "unknown state changed to" => value
 }

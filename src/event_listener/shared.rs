@@ -249,6 +249,17 @@ pub struct ScreencastEventData {
     pub monitor: bool,
 }
 
+/// This struct holds the data for the `screencastv2` event
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreencastV2EventData {
+    /// State/Is it turning on?
+    pub turning_on: bool,
+    /// The captured owner type: `monitor`, `window` or `region`
+    pub owner_type: String,
+    /// The name of the monitor or window being captured
+    pub name: String,
+}
+
 /// The data for the event executed when moving a window to a new workspace
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WindowMoveEvent {
@@ -442,6 +453,15 @@ pub struct WorkspaceMovedEventData {
     pub monitor: String,
 }
 
+/// This struct holds the data for the `changeworkspaceid` event
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceIdChangedEventData {
+    /// The id before the change
+    pub old_id: WorkspaceId,
+    /// The id after the change
+    pub new_id: WorkspaceId,
+}
+
 /// This struct holds window event data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowEventData {
@@ -462,6 +482,15 @@ pub struct MonitorEventData {
     pub workspace_name: Option<WorkspaceType>,
 }
 
+/// This struct holds the data for the `focusedmonv2` event
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MonitorV2EventData {
+    /// The monitor name
+    pub monitor_name: String,
+    /// The workspace id
+    pub workspace_id: WorkspaceId,
+}
+
 /// This struct holds changed special event data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedSpecialEventData {
@@ -471,9 +500,31 @@ pub struct ChangedSpecialEventData {
     pub workspace_name: String,
 }
 
+/// This struct holds the data for the `activespecialv2` event
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangedSpecialV2EventData {
+    /// The workspace id
+    pub workspace_id: WorkspaceId,
+    /// The workspace name
+    pub workspace_name: WorkspaceType,
+    /// The monitor name
+    pub monitor_name: String,
+}
+
 /// This struct holds monitor event data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonitorAddedEventData {
+    /// The monitor's id
+    pub id: MonitorId,
+    /// The monitor's name
+    pub name: String,
+    /// the monitor's description
+    pub description: String,
+}
+
+/// This struct holds the data for the `monitorremovedv2` event
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MonitorRemovedEventData {
     /// The monitor's id
     pub id: MonitorId,
     /// The monitor's name
@@ -498,6 +549,15 @@ pub struct WindowPinEventData {
     pub address: Address,
     /// The pin state
     pub pinned: bool,
+}
+
+/// This struct holds the data for the `minimized` event
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowMinimizedEventData {
+    /// The window address
+    pub address: Address,
+    /// The minimized state
+    pub minimized: bool,
 }
 
 /// This struct holds the event data for the windowtitle changed event
@@ -652,6 +712,36 @@ pub enum Event {
     /// And event that emits when a window is moved out of a group,
     /// it is the equivelant of the `moveoutofgroup`
     WindowMovedOutOfGroup(Address),
+    /// An event that emits when a system bell is rung,
+    /// it is the equivelant of the `bell` event
+    Bell(Option<Address>),
+    /// An event that emits when a window is minimized or unminimized,
+    /// it is the equivelant of the `minimized` event
+    WindowMinimized(WindowMinimizedEventData),
+    /// An event that emits when a window is killed,
+    /// it is the equivelant of the `kill` event
+    WindowKilled(Address),
+    /// An event that emits when a custom event is sent with the `event` dispatcher,
+    /// it is the equivelant of the `custom` event
+    Custom(String),
+    /// An event that emits when the id of a workspace is changed,
+    /// it is the equivelant of the `changeworkspaceid` event
+    WorkspaceIdChanged(WorkspaceIdChangedEventData),
+    /// An event that emits when a special workspace is closed on a monitor,
+    /// it is the equivelant of the `activespecialv2` event
+    SpecialRemovedV2(String),
+    /// An event that emits when the special workspace on a monitor is changed,
+    /// it is the equivelant of the `activespecialv2` event
+    ChangedSpecialV2(ChangedSpecialV2EventData),
+    /// An event that emits when the active monitor is changed,
+    /// it is the equivelant of the `focusedmonv2` event
+    ActiveMonitorChangedV2(MonitorV2EventData),
+    /// An event that emits when a monitor is removed,
+    /// it is the equivelant of the `monitorremovedv2` event
+    MonitorRemovedV2(MonitorRemovedEventData),
+    /// An event that emits when the screencopy state of a client changes,
+    /// it is the equivelant of the `screencastv2` event
+    ScreencastV2(ScreencastV2EventData),
 }
 
 fn parse_string_as_work(str: String) -> WorkspaceType {
@@ -703,6 +793,15 @@ pub(crate) enum ParsedEventType {
     ToggleGroup,
     MoveIntoGroup,
     MoveOutOfGroup,
+    Bell,
+    WindowMinimized,
+    WindowKilled,
+    Custom,
+    WorkspaceIdChanged,
+    ChangedSpecialV2,
+    ActiveMonitorChangedV2,
+    MonitorRemovedV2,
+    ScreencastV2,
 }
 
 /// All Hyprland events's arg count and enum variant.
@@ -749,6 +848,18 @@ pub(crate) static EVENTS: &[(&str, (usize, ParsedEventType))] = &[
     ("togglegroup", (2, ParsedEventType::ToggleGroup)),
     ("moveintogroup", (1, ParsedEventType::MoveIntoGroup)),
     ("moveoutofgroup", (1, ParsedEventType::MoveOutOfGroup)),
+    ("bell", (1, ParsedEventType::Bell)),
+    ("minimized", (2, ParsedEventType::WindowMinimized)),
+    ("kill", (1, ParsedEventType::WindowKilled)),
+    ("custom", (1, ParsedEventType::Custom)),
+    (
+        "changeworkspaceid",
+        (2, ParsedEventType::WorkspaceIdChanged),
+    ),
+    ("activespecialv2", (3, ParsedEventType::ChangedSpecialV2)),
+    ("focusedmonv2", (2, ParsedEventType::ActiveMonitorChangedV2)),
+    ("monitorremovedv2", (3, ParsedEventType::MonitorRemovedV2)),
+    ("screencastv2", (3, ParsedEventType::ScreencastV2)),
 ];
 
 use crate::default_instance;
@@ -974,6 +1085,62 @@ pub(crate) fn event_parser(event: &str) -> crate::Result<Vec<Event>> {
             ParsedEventType::MoveOutOfGroup => {
                 Ok(Event::WindowMovedOutOfGroup(Address::new(get![ref args;0])))
             }
+            ParsedEventType::Bell => {
+                let address = get![ref args;0];
+                Ok(Event::Bell(if address.is_empty() {
+                    None
+                } else {
+                    Some(Address::new(address))
+                }))
+            }
+            ParsedEventType::WindowMinimized => {
+                Ok(Event::WindowMinimized(WindowMinimizedEventData {
+                    address: Address::new(get![ref args;0]),
+                    minimized: get![ref args;1] == "1",
+                }))
+            }
+            ParsedEventType::WindowKilled => {
+                Ok(Event::WindowKilled(Address::new(get![ref args;0])))
+            }
+            ParsedEventType::Custom => Ok(Event::Custom(get![args;0])),
+            ParsedEventType::WorkspaceIdChanged => {
+                Ok(Event::WorkspaceIdChanged(WorkspaceIdChangedEventData {
+                    old_id: parse_int!(get![ref args;0], event: "WorkspaceIdChanged"),
+                    new_id: parse_int!(get![ref args;1], event: "WorkspaceIdChanged"),
+                }))
+            }
+            ParsedEventType::ChangedSpecialV2 => {
+                let workspace_id = get![ref args;0];
+                let workspace_name = get![args;1];
+                let monitor_name = get![args;2];
+                if workspace_id.is_empty() {
+                    Ok(Event::SpecialRemovedV2(monitor_name))
+                } else {
+                    Ok(Event::ChangedSpecialV2(ChangedSpecialV2EventData {
+                        workspace_id: parse_int!(workspace_id, event: "ChangedSpecialV2"),
+                        workspace_name: parse_string_as_work(workspace_name),
+                        monitor_name,
+                    }))
+                }
+            }
+            ParsedEventType::ActiveMonitorChangedV2 => {
+                Ok(Event::ActiveMonitorChangedV2(MonitorV2EventData {
+                    monitor_name: get![args;0],
+                    workspace_id: parse_int!(get![ref args;1], event: "ActiveMonitorChangedV2"),
+                }))
+            }
+            ParsedEventType::MonitorRemovedV2 => {
+                Ok(Event::MonitorRemovedV2(MonitorRemovedEventData {
+                    id: parse_int!(get![ref args;0], event: "MonitorRemovedV2" => MonitorId),
+                    name: get![args;1],
+                    description: get![args;2],
+                }))
+            }
+            ParsedEventType::ScreencastV2 => Ok(Event::ScreencastV2(ScreencastV2EventData {
+                turning_on: get![ref args;0] == "1",
+                owner_type: get![args;1],
+                name: get![args;2],
+            })),
         },
     });
 
@@ -1072,5 +1239,157 @@ mod group_tests {
             panic!("expected GroupToggled");
         };
         assert_eq!(d.window_address, *"0x55a");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod new_events_tests {
+    use super::*;
+
+    fn parse(payload: &str) -> Event {
+        event_parser(payload).unwrap().remove(0)
+    }
+
+    /// Upstream sends `bell>>{addr_hex}` or `bell>>` when no window is
+    /// identified (`src/protocols/XDGBell.cpp`).
+    #[test]
+    fn bell_carries_the_window_address_when_there_is_one() {
+        let Event::Bell(address) = parse("bell>>") else {
+            panic!("expected Bell");
+        };
+        assert!(address.is_none());
+        let Event::Bell(address) = parse("bell>>55a") else {
+            panic!("expected Bell");
+        };
+        assert_eq!(address, Some(Address::new("0x55a")));
+    }
+
+    /// Upstream sends `minimized>>{addr_hex},{0|1}` where `1` is minimized
+    /// (`src/protocols/ForeignToplevelWlr.cpp:126,138`).
+    #[test]
+    fn minimized_carries_address_and_state() {
+        for (payload, expected) in [("minimized>>55a,1", true), ("minimized>>55a,0", false)] {
+            let Event::WindowMinimized(data) = parse(payload) else {
+                panic!("expected WindowMinimized");
+            };
+            assert_eq!(data.minimized, expected, "payload {payload}");
+            assert_eq!(data.address, *"0x55a");
+        }
+    }
+
+    /// Upstream sends `kill>>{addr_hex}` from the kill keybind
+    /// (`InputManager.cpp:953`).
+    #[test]
+    fn kill_carries_the_window_address() {
+        let Event::WindowKilled(address) = parse("kill>>55a") else {
+            panic!("expected WindowKilled");
+        };
+        assert_eq!(address, *"0x55a");
+    }
+
+    /// The `custom` payload is free-form: `dispatch event a,b,c` must not be
+    /// split on its commas.
+    #[test]
+    fn custom_keeps_the_whole_payload() {
+        let Event::Custom(data) = parse("custom>>hello,world,with,commas") else {
+            panic!("expected Custom");
+        };
+        assert_eq!(data, "hello,world,with,commas");
+    }
+
+    /// Upstream sends `changeworkspaceid>>{old},{new}`; both are workspace ids
+    /// on both the legacy and the address-based grammar
+    /// (`src/desktop/Workspace.cpp:560`).
+    #[test]
+    fn workspace_id_changed_carries_both_ids() {
+        let Event::WorkspaceIdChanged(data) = parse("changeworkspaceid>>5,7") else {
+            panic!("expected WorkspaceIdChanged");
+        };
+        assert_eq!(data.old_id, 5);
+        assert_eq!(data.new_id, 7);
+    }
+
+    /// The empty payload `",,{monitor}"` means the special workspace on that
+    /// monitor was closed (`Monitor.cpp:1568,1617`).
+    #[test]
+    fn activespecialv2_empty_removes_the_special_workspace() {
+        let Event::SpecialRemovedV2(monitor) = parse("activespecialv2>>,,DP-1") else {
+            panic!("expected SpecialRemovedV2");
+        };
+        assert_eq!(monitor, "DP-1");
+    }
+
+    /// Upstream sends `activespecialv2>>{id},{name},{monitor}`; the id is
+    /// negative for special workspaces (`Monitor.cpp:1689`).
+    #[test]
+    fn activespecialv2_carries_id_name_and_monitor() {
+        let Event::ChangedSpecialV2(data) = parse("activespecialv2>>-98,special:magic,DP-1") else {
+            panic!("expected ChangedSpecialV2");
+        };
+        assert_eq!(data.workspace_id, -98);
+        assert_eq!(
+            data.workspace_name,
+            WorkspaceType::Special(Some("magic".to_string()))
+        );
+        assert_eq!(data.monitor_name, "DP-1");
+    }
+
+    /// Upstream sends `focusedmonv2>>{monitor},{workspace_id}`
+    /// (`FocusState.cpp:288`). The workspace id carries the same
+    /// negative-id convention as `workspacev2`.
+    #[test]
+    fn focusedmonv2_carries_monitor_and_workspace_id() {
+        let Event::ActiveMonitorChangedV2(data) = parse("focusedmonv2>>eDP-1,-98") else {
+            panic!("expected ActiveMonitorChangedV2");
+        };
+        assert_eq!(data.monitor_name, "eDP-1");
+        assert_eq!(data.workspace_id, -98);
+    }
+
+    /// Upstream sends `monitorremovedv2>>{id},{name},{description}` — the same
+    /// shape as `monitoraddedv2` (`Monitor.cpp:398`).
+    #[test]
+    fn monitorremovedv2_carries_id_name_and_description() {
+        let Event::MonitorRemovedV2(data) = parse("monitorremovedv2>>0,eDP-1,Virtual 1") else {
+            panic!("expected MonitorRemovedV2");
+        };
+        assert_eq!(data.id, 0);
+        assert_eq!(data.name, "eDP-1");
+        assert_eq!(data.description, "Virtual 1");
+    }
+
+    /// Upstream sends `screencastv2>>{0|1},{type},{name}`. The `type` is
+    /// formatted to `monitor`/`window`/`region`, never `1`
+    /// (`ScreenshareSession.cpp:141,148` + the formatter in
+    /// `ScreenshareManager.hpp:262-264`).
+    #[test]
+    fn screencastv2_carries_state_type_and_name() {
+        for (payload, turning_on, owner, name) in [
+            ("screencastv2>>1,monitor,eDP-1", true, "monitor", "eDP-1"),
+            ("screencastv2>>0,window,kitty", false, "window", "kitty"),
+            ("screencastv2>>1,region,eDP-1", true, "region", "eDP-1"),
+        ] {
+            let Event::ScreencastV2(data) = parse(payload) else {
+                panic!("expected ScreencastV2");
+            };
+            assert_eq!(data.turning_on, turning_on, "payload {payload}");
+            assert_eq!(data.owner_type, owner, "payload {payload}");
+            assert_eq!(data.name, name, "payload {payload}");
+        }
+    }
+
+    /// A v1 payload that also arrives on the v2 event name must not be
+    /// misparsed as a different event type.
+    #[test]
+    fn v1_names_still_parse_to_their_own_variants() {
+        let Event::ActiveMonitorChanged(data) = parse("focusedmon>>eDP-1,name") else {
+            panic!("expected ActiveMonitorChanged");
+        };
+        assert_eq!(data.monitor_name, "eDP-1");
+        assert_eq!(
+            data.workspace_name,
+            Some(WorkspaceType::Regular("name".to_string()))
+        );
     }
 }
