@@ -51,7 +51,9 @@ pub(crate) enum DataCommands {
 #[serde(rename_all = "lowercase")]
 #[non_exhaustive]
 pub enum WorkspaceKind {
+    /// A regular workspace, identified by a numeric id
     Normal,
+    /// A special workspace, identified by a `special:` name
     Special,
 }
 

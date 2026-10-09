@@ -15,6 +15,16 @@ pub enum HyprError {
     /// Dispatcher returned non `ok` value
     #[display("A dispatcher returned a non-`ok`, value which is probably an error: {_0}")]
     NotOkDispatch(String),
+    /// The connected Hyprland session lacks a capability the requested operation needs.
+    ///
+    /// Hyprland 0.55 replaced the legacy `hyprctl dispatch <str>` grammar with a Lua
+    /// one behind `eval`, and one binary serves both grammars at once — which is live
+    /// depends on the session's config, not its version. A legacy-grammar call on a
+    /// Lua session either fails with a Lua parse error that names nothing useful, or
+    /// — for the forms that happen to parse — returns `ok` without doing what was
+    /// asked. This error names the capability instead, so the failure is diagnosable.
+    #[display("This Hyprland session does not support: {_0}")]
+    Unsupported(String),
     /// Error when interacting with Hyprpaper.
     #[cfg(feature = "hyprpaper")]
     Hyprpaper(crate::hyprpaper::Error),
@@ -39,6 +49,7 @@ impl HyprError {
             Self::IoError(_) => Err(self),
             Self::FromUtf8Error(e) => Ok(Self::FromUtf8Error(e.clone())),
             Self::NotOkDispatch(s) => Ok(Self::NotOkDispatch(s.clone())),
+            Self::Unsupported(s) => Ok(Self::Unsupported(s.clone())),
             Self::InvalidHyprColorFormat => Ok(Self::InvalidHyprColorFormat),
             Self::InvalidHyprGradientFormat => Ok(Self::InvalidHyprGradientFormat),
             #[cfg(feature = "hyprpaper")]
@@ -108,6 +119,7 @@ impl PartialEq for HyprError {
             | (InvalidOptionValue, InvalidOptionValue) => true,
 
             (NotOkDispatch(a), NotOkDispatch(b))
+            | (Unsupported(a), Unsupported(b))
             | (InvalidOptionKey(a), InvalidOptionKey(b))
             | (Internal(a), Internal(b))
             | (Other(a), Other(b)) => a == b,
@@ -203,9 +215,36 @@ mod tests {
             HyprError::InvalidHyprGradientFormat,
             HyprError::other("boom"),
             HyprError::Internal("i".into()),
+            HyprError::Unsupported("the legacy grammar".into()),
         ] {
             assert!(e.source().is_none(), "unexpected source for {e:?}");
         }
+    }
+
+    /// `Unsupported` exists so a session that cannot run a request says so
+    /// instead of silently returning `ok`. The capability must survive the
+    /// message — an error that only says "unsupported" is not diagnosable.
+    #[test]
+    fn unsupported_names_the_missing_capability() {
+        let e = HyprError::Unsupported("the legacy dispatch grammar".into());
+        assert!(
+            e.to_string().contains("the legacy dispatch grammar"),
+            "capability lost from {e}"
+        );
+    }
+
+    /// The variant must compare and clone like its `String`-payload siblings,
+    /// and must never collide with a different variant carrying the same text.
+    #[test]
+    fn unsupported_compares_and_clones_by_value() {
+        let e = HyprError::Unsupported("lua-only".into());
+        assert_eq!(e, HyprError::Unsupported("lua-only".into()));
+        assert_ne!(e, HyprError::Unsupported("other".into()));
+        assert_eq!(e.try_as_cloned().unwrap(), e);
+        assert_ne!(
+            HyprError::Unsupported("x".into()),
+            HyprError::NotOkDispatch("x".into())
+        );
     }
 
     /// The rename from `InvalidHyprGradiantFormat` must not leave stragglers.
