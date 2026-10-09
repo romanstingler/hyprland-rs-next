@@ -378,12 +378,34 @@ pub struct Client {
     pub xwayland: bool,
     /// Is this window pinned?
     pub pinned: bool,
+    /// Is the window pinned *and* fullscreened? Preserves the pinned state
+    /// while fullscreening (upstream `m_pinFullscreened`).
+    #[serde(default, rename = "pinFullscreened")]
+    pub pin_fullscreened: bool,
     /// The internal fullscreen mode
     pub fullscreen: FullscreenMode,
     /// The client fullscreen mode
     #[serde(rename = "fullscreenClient")]
     pub fullscreen_client: FullscreenMode,
+    /// Which fullscreen handler manages this window (upstream
+    /// `getFullscreenHandlerNameAsString`): `"default"`, `"scrolling"` or
+    /// `"unknown"`.
+    #[serde(default, rename = "fullscreenHandler")]
+    pub fullscreen_handler: String,
+    /// Whether the window may render over a fullscreen window (upstream
+    /// `m_allowedOverFullscreen`). This replaced the old `overFullscreen` key.
+    #[serde(default, rename = "allowedOverFullscreen")]
+    pub allowed_over_fullscreen: bool,
     /// Whether the window was created over a fullscreen window
+    ///
+    /// Deprecated: Hyprland no longer emits `overFullscreen` — it was replaced
+    /// by [`Client::allowed_over_fullscreen`] — so this is always `false` on
+    /// current Hyprland. Kept so older payloads and downstream code keep
+    /// working.
+    #[deprecated(
+        since = "0.5.0",
+        note = "superseded by `allowed_over_fullscreen`; Hyprland no longer emits `overFullscreen`"
+    )]
     #[serde(default, rename = "overFullscreen")]
     pub over_fullscreen: bool,
     /// Group members
@@ -408,6 +430,10 @@ pub struct Client {
     /// The content type of the window
     #[serde(default, rename = "contentType")]
     pub content_type: String,
+    /// Hint to the compositor that this window should not be torn
+    /// (upstream `m_tearingHint`).
+    #[serde(default, rename = "tearingHint")]
+    pub tearing_hint: bool,
     /// The stable ID of the window for the `ext_foreign_toplevel_list_v1` protocol
     #[serde(default, rename = "stableId")]
     pub stable_id: String,
@@ -1078,6 +1104,129 @@ mod ruleset_tests {
         assert_eq!(second.workspace_string, "special:magic");
         assert_eq!(second.layout.as_deref(), Some("dwindle"));
         assert_eq!(second.enabled, Some(true));
+    }
+}
+
+#[cfg(test)]
+mod client_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, deprecated)]
+
+    use super::*;
+
+    /// Hyprland's client JSON gained four keys — `pinFullscreened`,
+    /// `fullscreenHandler`, `allowedOverFullscreen`, `tearingHint` — and
+    /// dropped `overFullscreen`. All four must parse, and the dropped
+    /// key's absence must not break anything. Field list and value
+    /// shapes verified against `src/debug/HyprCtl.cpp` at `v0.56.2`.
+    #[test]
+    fn the_four_new_keys_parse() {
+        let payload = r#"{
+            "address": "0x55a",
+            "mapped": true,
+            "hidden": false,
+            "visible": true,
+            "acceptsInput": true,
+            "at": [30720, -32769],
+            "size": [1920, 1080],
+            "workspace": {"id": 1, "name": "1"},
+            "floating": false,
+            "monitor": 0,
+            "class": "kitty",
+            "title": "shell",
+            "initialClass": "kitty",
+            "initialTitle": "shell",
+            "pid": 4242,
+            "xwayland": false,
+            "pinned": true,
+            "pinFullscreened": true,
+            "fullscreen": 0,
+            "fullscreenClient": 0,
+            "fullscreenHandler": "default",
+            "allowedOverFullscreen": true,
+            "grouped": [],
+            "tags": [],
+            "swallowing": "0x0",
+            "focusHistoryID": 0,
+            "inhibitingIdle": false,
+            "xdgTag": "",
+            "xdgDescription": "",
+            "contentType": "",
+            "tearingHint": true,
+            "stableId": "0x1"
+        }"#;
+        let c: Client = serde_json::from_str(payload).unwrap();
+
+        assert!(c.pin_fullscreened);
+        assert_eq!(c.fullscreen_handler, "default");
+        assert!(c.allowed_over_fullscreen);
+        assert!(c.tearing_hint);
+        // `overFullscreen` is absent from the payload.
+        assert!(!c.over_fullscreen);
+    }
+
+    /// A payload from an older Hyprland — none of the four new keys —
+    /// must still deserialize. This is the regression #397 would have
+    /// introduced without `#[serde(default)]` on every new field.
+    #[test]
+    fn an_old_payload_still_deserialises() {
+        let payload = r#"{
+            "address": "0x55a",
+            "mapped": true,
+            "visible": true,
+            "at": [0, 0],
+            "size": [100, 100],
+            "workspace": {"id": 1, "name": "1"},
+            "floating": false,
+            "class": "kitty",
+            "title": "shell",
+            "initialClass": "kitty",
+            "initialTitle": "shell",
+            "pid": 4242,
+            "xwayland": false,
+            "pinned": false,
+            "fullscreen": 0,
+            "fullscreenClient": 0,
+            "grouped": [],
+            "swallowing": "0x0",
+            "focusHistoryID": 0
+        }"#;
+        let c: Client = serde_json::from_str(payload).unwrap();
+
+        assert!(!c.pin_fullscreened);
+        assert_eq!(c.fullscreen_handler, "");
+        assert!(!c.allowed_over_fullscreen);
+        assert!(!c.tearing_hint);
+    }
+
+    /// The handler name is an open vocabulary upstream — the C++ switch
+    /// has a `default: return "unknown"` arm — so an unrecognised name
+    /// must not fail deserialization.
+    #[test]
+    fn an_unknown_handler_name_is_kept_verbatim() {
+        let payload = r#"{
+            "address": "0x55a",
+            "mapped": true,
+            "visible": true,
+            "at": [0, 0],
+            "size": [100, 100],
+            "workspace": {"id": 1, "name": "1"},
+            "floating": false,
+            "class": "kitty",
+            "title": "shell",
+            "initialClass": "kitty",
+            "initialTitle": "shell",
+            "pid": 4242,
+            "xwayland": false,
+            "pinned": false,
+            "fullscreen": 0,
+            "fullscreenClient": 0,
+            "fullscreenHandler": "scrolling",
+            "grouped": [],
+            "swallowing": "0x0",
+            "focusHistoryID": 0
+        }"#;
+        let c: Client = serde_json::from_str(payload).unwrap();
+        assert_eq!(c.fullscreen_handler, "scrolling");
     }
 }
 
