@@ -15,7 +15,7 @@
 //! `encoding_rs`. If detection fails or the stream is ambiguous, we fall
 //! back to UTF-8 lossy — same behavior as before, no regression.
 
-use chardetng::EncodingDetector;
+use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 
 /// Decode arbitrary bytes as a string, trying to detect the encoding.
 ///
@@ -29,9 +29,9 @@ pub fn decode_ipc_response(bytes: &[u8]) -> String {
     if let Ok(s) = std::str::from_utf8(bytes) {
         return s.to_owned();
     }
-    let mut det = EncodingDetector::new();
+    let mut det = EncodingDetector::new(Iso2022JpDetection::Allow);
     det.feed(bytes, true);
-    let enc = det.guess(None, true);
+    let enc = det.guess(None, Utf8Detection::Allow);
     let (decoded, _, _) = enc.decode(bytes);
     if decoded.contains('\u{FFFD}') {
         // Detection was wrong / ambiguous — fall back to lossy UTF-8 so the
