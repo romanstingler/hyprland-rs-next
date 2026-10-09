@@ -12,21 +12,21 @@ fn main() -> hyprland::Result<()> {
     let instance = default_instance_panic();
     Keyword::instance_set(instance, "submap", "example")?;
     hyprland::bind!(instance, SUPER, Key, "I" => ToggleFloating, None)?;
-    hyprland::bind!(instance, l | CTRL ALT, Key, "Delete" => Exec, "sudo reboot")?; // Reboot including from lock screen
-    hyprland::bind!(instance, e | SUPER, Key, "C" => KillActiveWindow)?; // Kill all your windows
+    hyprland::bind!(instance, Locked | CTRL ALT, Key, "Delete" => Exec, "sudo reboot")?; // Reboot including from lock screen
+    hyprland::bind!(instance, Repeat | SUPER, Key, "C" => KillActiveWindow)?; // Kill all your windows
     Keyword::instance_set(instance, "submap", "reset")?;
 
     let instance = Instance::from_instance("long instance name".to_string())?;
     Keyword::instance_set(&instance, "submap", "example")?;
     hyprland::bind!(&instance, SUPER, Key, "I" => ToggleFloating, None)?;
-    hyprland::bind!(&instance, l | CTRL ALT, Key, "Delete" => Exec, "sudo reboot")?; // Reboot including from lock screen
-    hyprland::bind!(&instance, e | SUPER, Key, "C" => KillActiveWindow)?; // Kill all your windows
+    hyprland::bind!(&instance, Locked | CTRL ALT, Key, "Delete" => Exec, "sudo reboot")?; // Reboot including from lock screen
+    hyprland::bind!(&instance, Repeat | SUPER, Key, "C" => KillActiveWindow)?; // Kill all your windows
     Keyword::instance_set(&instance, "submap", "reset")?;
 
     Keyword::set("submap", "example")?;
     hyprland::bind!(SUPER, Key, "I" => ToggleFloating, None)?;
-    hyprland::bind!(l | CTRL ALT, Key, "Delete" => Exec, "sudo reboot")?; // Reboot including from lock screen
-    hyprland::bind!(e | SUPER, Key, "C" => KillActiveWindow)?; // Kill all your windows
+    hyprland::bind!(Locked | CTRL ALT, Key, "Delete" => Exec, "sudo reboot")?; // Reboot including from lock screen
+    hyprland::bind!(Repeat | SUPER, Key, "C" => KillActiveWindow)?; // Kill all your windows
     Keyword::set("submap", "reset")?;
 
     let instance = Instance::from_current_env()?;

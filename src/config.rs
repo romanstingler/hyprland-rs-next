@@ -61,41 +61,44 @@ pub mod binds {
 
     pub use crate::shared::Mod;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
-    #[allow(non_camel_case_types)]
     /// Enum for bind flags
+    ///
+    /// The variants are the flag words upstream defines in
+    /// `ConfigManager.cpp:1516-1529`; the letter a Hyprland config uses is in the
+    /// `#[display]`, so renaming these changes no generated bind string.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
     #[non_exhaustive]
     pub enum Flag {
         /// Works when screen is locked
         #[display("l")]
-        l,
+        Locked,
         /// Activates on release
         #[display("r")]
-        r,
+        Release,
         /// Repeats when held
         #[display("e")]
-        e,
+        Repeat,
         /// Non-consuming, key/mouse events will be passed to the active window in addition to triggering the dispatcher.
         #[display("n")]
-        n,
+        NonConsuming,
         /// Used for mouse binds
         #[display("m")]
-        m,
+        Mouse,
         /// Transparent, cannot be shadowed by other binds.
         #[display("t")]
-        t,
+        Transparent,
         /// Ignore mods, will ignore modifiers.
         #[display("i")]
-        i,
-        /// Separate, will arbitrarily combine keys between each mod/key
+        IgnoreMods,
+        /// Multi-key, will arbitrarily combine keys between each mod/key
         #[display("s")]
-        s,
+        MultiKey,
         /// Has description, will allow you to write a description for your bind.
         #[display("d")]
-        d,
+        HasDescription,
         /// Bypasses the app's requests to inhibit keybinds.
         #[display("p")]
-        p,
+        DontInhibit,
     }
 
     /// A struct used for indentifying bindings
@@ -210,10 +213,10 @@ pub mod binds {
     /// #[tokio::main(flavor = "current_thread")]
     /// # async fn test() -> Result<()> {
     ///   let instance = default_instance()?;
-    ///   bind_raw!(instance , &[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::l, Flag::r, Flag::m] ,  DispatchType::Exit )?;
-    ///   bind_raw!(&[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::l, Flag::r, Flag::m] ,  DispatchType::Exit )?;
-    ///   bind_raw!(async, instance, &[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::l, Flag::r, Flag::m] ,  DispatchType::Exit).await?;
-    ///   bind_raw!(async, &[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::l, Flag::r, Flag::m] ,  DispatchType::Exit).await?;
+    ///   bind_raw!(instance , &[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::Locked, Flag::Release, Flag::Mouse] ,  DispatchType::Exit )?;
+    ///   bind_raw!(&[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::Locked, Flag::Release, Flag::Mouse] ,  DispatchType::Exit )?;
+    ///   bind_raw!(async, instance, &[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::Locked, Flag::Release, Flag::Mouse] ,  DispatchType::Exit).await?;
+    ///   bind_raw!(async, &[Mod::SHIFT] , Key::Key("m")  ,  &[Flag::Locked, Flag::Release, Flag::Mouse] ,  DispatchType::Exit).await?;
     ///   Ok(())
     /// # }
     /// ```
@@ -270,9 +273,9 @@ pub mod binds {
     /// #[tokio::main(flavor = "current_thread")]
     /// # async fn test() -> Result<()> {
     ///     let instance = default_instance()?;
-    ///     bind!(instance, l r m | SHIFT, Key, "m" => Exit);
+    ///     bind!(instance, Locked Release Mouse | SHIFT, Key, "m" => Exit);
     ///     bind!(SHIFT ALT, Key, "b" => CenterWindow);
-    ///     bind!(async ; l r m | SHIFT, Key, "m" => Exit);
+    ///     bind!(async ; Locked Release Mouse | SHIFT, Key, "m" => Exit);
     ///     bind!(async ; instance, SUPER, Key, "l" => CenterWindow);
     ///     bind!(async ; SHIFT ALT, Key, "b" => CenterWindow);
     ///     Ok(())
@@ -455,7 +458,7 @@ mod join_tests {
     #[test]
     fn join_is_unchanged_for_every_original_receiver() {
         let mods: Vec<Mod> = vec![Mod::SUPER, Mod::SHIFT];
-        let flags: Vec<Flag> = vec![Flag::l, Flag::e];
+        let flags: Vec<Flag> = vec![Flag::Locked, Flag::Repeat];
 
         assert_eq!(mods.join(), "SUPERSHIFT");
         assert_eq!(mods.as_slice().join(), "SUPERSHIFT");
@@ -469,5 +472,26 @@ mod join_tests {
         let flags: &[Flag] = &[];
         assert_eq!(mods.join(), "");
         assert_eq!(flags.join(), "");
+    }
+
+    /// §2.10h renamed the variants, not the letters. This pins the entire
+    /// vocabulary in declaration order, so a future rename cannot drift into a
+    /// different generated bind: the letters are the ones upstream's own flag
+    /// switch defines at `ConfigManager.cpp:1516-1529`.
+    #[test]
+    fn every_flag_variant_renders_its_upstream_letter() {
+        let flags: Vec<Flag> = vec![
+            Flag::Locked,
+            Flag::Release,
+            Flag::Repeat,
+            Flag::NonConsuming,
+            Flag::Mouse,
+            Flag::Transparent,
+            Flag::IgnoreMods,
+            Flag::MultiKey,
+            Flag::HasDescription,
+            Flag::DontInhibit,
+        ];
+        assert_eq!(flags.join(), "lrenmtisdp");
     }
 }
