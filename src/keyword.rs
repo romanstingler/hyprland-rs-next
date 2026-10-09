@@ -1,14 +1,16 @@
 //! # Keyword module
 //!
-//! This module is used for setting, and getting keywords
+//! This module is used for setting, getting and discovering keywords
 //!
 //! ## Usage
 //!
 //! ```rust, no_run
 //! use hyprland::keyword::Keyword;
+//! use hyprland::shared::HyprData;
 //! fn main() -> hyprland::Result<()> {
 //!     Keyword::get("some_keyword")?;
 //!     Keyword::set("another_keyword", "the value to set it to")?;
+//!     hyprland::keyword::OptionDescriptions::get()?;
 //!
 //!     Ok(())
 //! }
@@ -599,6 +601,96 @@ impl Keyword {
     }
 }
 
+/// One entry of the `descriptions` command: an option's name, its description,
+/// and its default and current values.
+///
+/// `default` and `current` are [serde_json::Value] because Hyprland's shape is
+/// type-dependent (`ConfigValues.cpp:30-160`): Int options emit bare numbers,
+/// `css`/`gradient`/`vec2`/colour options emit strings or `[x, y]` arrays, and
+/// Bool options emit real booleans. `min`/`max` are only emitted at all for the
+/// Int, Float and `css` types, and Int options also carry a `map` field that
+/// this struct ignores.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct OptionDescription {
+    /// The option name in the colon form Hyprland emits, e.g. `general:border_size`
+    pub name: String,
+    /// The human-readable description of the option
+    pub description: String,
+    /// The default value, whose JSON shape depends on the option's type
+    pub default: serde_json::Value,
+    /// The current value, in the same shape as [Self::default]
+    pub current: serde_json::Value,
+    /// The minimum, when the option has one
+    pub min: Option<serde_json::Value>,
+    /// The maximum, when the option has one
+    pub max: Option<serde_json::Value>,
+}
+
+impl OptionDescription {
+    /// The name in the dotted form [Keyword::get] accepts, using Hyprland's own
+    /// translation: every `:` becomes `.` and every `-` becomes `_`
+    /// (`lua/ConfigManager.cpp:1136-1141`).
+    ///
+    /// `descriptions` is the one command that emits colon-form names, so this is
+    /// what turns a discovered entry into an option that can be read.
+    pub fn dotted_name(&self) -> String {
+        self.name.replace(':', ".").replace('-', "_")
+    }
+}
+
+/// This struct holds a vector of every option description
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OptionDescriptions(Vec<OptionDescription>);
+
+impl HyprData for OptionDescriptions {
+    fn get() -> crate::Result<Self> {
+        Self::instance_get(default_instance()?)
+    }
+    fn instance_get(instance: &Instance) -> crate::Result<Self> {
+        Ok(Self(serde_json::from_str(
+            &instance.write_to_socket(command!(JSON, "descriptions"))?,
+        )?))
+    }
+    #[cfg(any(feature = "async-lite", feature = "tokio"))]
+    async fn get_async() -> crate::Result<Self> {
+        Self::instance_get_async(default_instance()?).await
+    }
+    #[cfg(any(feature = "async-lite", feature = "tokio"))]
+    async fn instance_get_async(instance: &Instance) -> crate::Result<Self> {
+        Ok(Self(serde_json::from_str(
+            &instance
+                .write_to_socket_async(command!(JSON, "descriptions"))
+                .await?,
+        )?))
+    }
+}
+
+impl HyprDataVec<OptionDescription> for OptionDescriptions {
+    fn to_vec(self) -> Vec<OptionDescription> {
+        self.0
+    }
+}
+
+impl std::ops::Deref for OptionDescriptions {
+    type Target = Vec<OptionDescription>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<Vec<OptionDescription>> for OptionDescriptions {
+    fn from(value: Vec<OptionDescription>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<OptionDescriptions> for Vec<OptionDescription> {
+    fn from(value: OptionDescriptions) -> Self {
+        value.0
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -707,6 +799,123 @@ mod tests {
             OptionValue::try_from(&raw(r#"{"option":"x","set":true,"nonsense":1}"#)).unwrap(),
             OptionValue::Unknown(_)
         ));
+    }
+}
+
+#[cfg(test)]
+mod description_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+
+    /// A slice of real upstream output, one entry per value type, in the shapes
+    /// `ConfigValues.cpp:30-160` actually emits. `general:border_size` is an Int
+    /// (min/max present, `map` always emitted and always ignored here),
+    /// `general:gaps_in` is a `css` gap (min/max present but null),
+    /// `general:col.inactive_border` is a Gradient and
+    /// `decoration:blur:enabled` a Bool (no min/max at all).
+    const PAYLOAD: &str = r#"[
+            {"name":"general:border_size","description":"size of the border around windows","default":1,"current":2,"min":0,"max":20,"map":null},
+            {"name":"general:gaps_in","description":"gaps between windows","default":"5","current":"3 3 3 3","min":null,"max":null},
+            {"name":"general:col.inactive_border","description":"border color for inactive windows","default":"ff444444","current":"ff444444"},
+            {"name":"decoration:blur:enabled","description":"enable kawase window background blur","default":true,"current":false}
+        ]"#;
+
+    fn descriptions() -> Vec<OptionDescription> {
+        serde_json::from_str(PAYLOAD).unwrap()
+    }
+
+    /// Every upstream type shape must deserialize,including the Int `map`
+    /// field this struct deliberately drops.
+    #[test]
+    fn every_upstream_shape_deserializes() {
+        let all = descriptions();
+        assert_eq!(all.len(), 4);
+
+        let int = &all[0];
+        assert_eq!(int.name, "general:border_size");
+        assert_eq!(int.description, "size of the border around windows");
+        assert_eq!(int.default, serde_json::json!(1));
+        assert_eq!(int.current, serde_json::json!(2));
+        assert_eq!(int.min, Some(serde_json::json!(0)));
+        assert_eq!(int.max, Some(serde_json::json!(20)));
+
+        // css gaps are strings, and their null min/max are None, not errors
+        let css = &all[1];
+        assert_eq!(css.default, serde_json::json!("5"));
+        assert_eq!(css.current, serde_json::json!("3 3 3 3"));
+        assert!(css.min.is_none() && css.max.is_none());
+
+        // a gradient arrives pre-rendered as a hex string
+        assert_eq!(all[2].default, serde_json::json!("ff444444"));
+
+        // a bool is a real JSON bool, and the type emits no min/max keys at all
+        assert_eq!(all[3].default, serde_json::json!(true));
+        assert!(all[3].min.is_none() && all[3].max.is_none());
+    }
+
+    /// Hyprland's own translation, `lua/ConfigManager.cpp:1136-1141`: every
+    /// `:` becomes `.` and every `-` becomes `_`. `descriptions` emits colon
+    /// names, so this is what makes a discovered entry readable by
+    /// `Keyword::get`.
+    #[test]
+    fn dotted_name_uses_hyprlands_own_translation() {
+        assert_eq!(
+            descriptions()[0].dotted_name(),
+            "general.border_size",
+            "one colon"
+        );
+        // a name with a colon *and* a dot in the key
+        assert_eq!(
+            descriptions()[2].dotted_name(),
+            "general.col.inactive_border",
+            "colon and dot"
+        );
+        // nested sections: two colons, both translated
+        assert_eq!(
+            OptionDescription {
+                name: "decoration:blur:enabled".to_string(),
+                description: String::new(),
+                default: serde_json::json!(true),
+                current: serde_json::json!(true),
+                min: None,
+                max: None,
+            }
+            .dotted_name(),
+            "decoration.blur.enabled",
+            "two colons"
+        );
+        // dashes become underscores, per the same two lines of upstream
+        assert_eq!(
+            OptionDescription {
+                name: "device:epic-mouse-v1:sensitivity".to_string(),
+                description: String::new(),
+                default: serde_json::json!(0),
+                current: serde_json::json!(0),
+                min: None,
+                max: None,
+            }
+            .dotted_name(),
+            "device.epic_mouse_v1.sensitivity",
+            "dash"
+        );
+    }
+
+    /// The reader type must behave like the vector it wraps, because
+    /// discovering an option means iterating and filtering the whole set.
+    #[test]
+    fn the_reader_behaves_like_a_vector() {
+        let all: OptionDescriptions = descriptions().into();
+        assert_eq!(all.len(), 4);
+        assert_eq!(all[0].name, "general:border_size");
+        assert_eq!(all.iter().filter(|o| o.max.is_some()).count(), 1);
+
+        let by_name = |n: &str| all.iter().any(|o| o.name == n);
+        assert!(by_name("decoration:blur:enabled"));
+        assert!(!by_name("decoration:blur:nonsense"));
+
+        let owned: Vec<OptionDescription> = all.clone().to_vec();
+        assert_eq!(owned.len(), 4);
+        assert_eq!(Vec::from(all), owned);
     }
 }
 
