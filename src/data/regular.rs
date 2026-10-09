@@ -44,19 +44,59 @@ pub(crate) enum DataCommands {
     WorkspaceRules,
 }
 
+/// The `type` field of a workspace payload (`workspaceTypeToString` upstream).
+///
+/// Absent on Hyprland ≤ v0.56.2, where the id's sign carries the same information.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum WorkspaceKind {
+    Normal,
+    Special,
+}
+
+/// The error the `id()` accessors return when the payload has no numeric id.
+fn numeric_id(id: Option<WorkspaceId>) -> crate::Result<WorkspaceId> {
+    id.ok_or_else(|| {
+        crate::error::HyprError::Other(String::from(
+            "workspace has no numeric id; identify it by its address",
+        ))
+    })
+}
+
+/// Whether a workspace is special: `type` when present, else the id's sign (Hyprland ≤ v0.56.2).
+fn is_special_workspace(id: Option<WorkspaceId>, kind: Option<WorkspaceKind>) -> bool {
+    match kind {
+        Some(WorkspaceKind::Special) => true,
+        Some(WorkspaceKind::Normal) => false,
+        None => id.is_some_and(is_special_id),
+    }
+}
+
 /// This struct holds a basic identifier for a workspace often used in other structs
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceBasic {
-    /// The workspace Id
-    pub id: WorkspaceId,
-    /// The workspace's name
+    /// The stable identity (`addressableName` upstream): `"5"` or `"special:<name>"`. Absent on Hyprland ≤ v0.56.2.
+    #[serde(default)]
+    pub address: Option<Address>,
+    #[serde(default)]
+    id: Option<WorkspaceId>,
+    /// Whether the workspace is normal or special. Absent on Hyprland ≤ v0.56.2.
+    #[serde(default)]
+    pub r#type: Option<WorkspaceKind>,
+    /// The display name — cosmetic, changes on rename; the stable identity is `address`.
     pub name: String,
 }
 
 impl WorkspaceBasic {
+    /// The numeric id; errors when the workspace has none. See [`Workspace::id`].
+    pub fn id(&self) -> crate::Result<WorkspaceId> {
+        numeric_id(self.id)
+    }
+
     /// If this is a special workspace
     pub fn is_special(&self) -> bool {
-        is_special_id(self.id)
+        is_special_workspace(self.id, self.r#type)
     }
 }
 
@@ -170,9 +210,15 @@ create_data_struct!(
 /// This struct holds information for a workspace
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
-    /// The workspace Id
-    pub id: WorkspaceId,
-    /// The workspace's name
+    /// The stable identity (`addressableName` upstream): `"5"` or `"special:<name>"`. Absent on Hyprland ≤ v0.56.2.
+    #[serde(default)]
+    pub address: Option<Address>,
+    #[serde(default)]
+    id: Option<WorkspaceId>,
+    /// Whether the workspace is normal or special. Absent on Hyprland ≤ v0.56.2.
+    #[serde(default)]
+    pub r#type: Option<WorkspaceKind>,
+    /// The display name — cosmetic, changes on rename; the stable identity is `address`.
     pub name: String,
     /// The monitor the workspace is on
     pub monitor: String,
@@ -199,9 +245,14 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    /// The numeric id. Errors when the workspace has none — special workspaces are identified by [`Workspace::address`] alone.
+    pub fn id(&self) -> crate::Result<WorkspaceId> {
+        numeric_id(self.id)
+    }
+
     /// If this is a special workspace
     pub fn is_special(&self) -> bool {
-        is_special_id(self.id)
+        is_special_workspace(self.id, self.r#type)
     }
 }
 
@@ -211,7 +262,9 @@ mod tests {
 
     fn workspace(id: WorkspaceId, name: &str) -> Workspace {
         Workspace {
-            id,
+            address: None,
+            id: Some(id),
+            r#type: None,
             name: name.to_owned(),
             monitor: "DP-1".to_owned(),
             monitor_id: Some(1),
@@ -260,7 +313,9 @@ mod tests {
 
     fn basic(id: WorkspaceId, name: &str) -> WorkspaceBasic {
         WorkspaceBasic {
-            id,
+            address: None,
+            id: Some(id),
+            r#type: None,
             name: name.to_owned(),
         }
     }
@@ -282,6 +337,132 @@ mod tests {
                 "disagreement for id {id} name {name}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    /// `address` and `type` always present, `id` only when numeric. Shape from `getWorkspaceData` on upstream `main`.
+    #[test]
+    fn a_main_payload_with_an_id_parses() {
+        let payload = r#"{
+            "address": "5",
+            "id": 5,
+            "type": "normal",
+            "name": "5",
+            "monitor": "DP-1",
+            "monitorID": 1,
+            "windows": 3,
+            "hasfullscreen": false,
+            "lastwindow": "0x55a",
+            "lastwindowtitle": "shell",
+            "ispersistent": false,
+            "tiledLayout": "dwindle"
+        }"#;
+        let w: Workspace = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(w.address.as_deref(), Some("5"));
+        assert_eq!(w.id().unwrap(), 5);
+        assert_eq!(w.r#type, Some(WorkspaceKind::Normal));
+        assert!(!w.is_special());
+    }
+
+    /// A special workspace on `main` omits `id`; the accessor must error, not synthesise a plausible `0` (the #400 defect).
+    #[test]
+    fn a_main_special_workspace_has_no_numeric_id() {
+        let payload = r#"{
+            "address": "special:magic",
+            "type": "special",
+            "name": "magic",
+            "monitor": "DP-1",
+            "monitorID": 1,
+            "windows": 0,
+            "hasfullscreen": false,
+            "lastwindow": "0x0",
+            "lastwindowtitle": "",
+            "ispersistent": false,
+            "tiledLayout": "dwindle"
+        }"#;
+        let w: Workspace = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(w.address.as_deref(), Some("special:magic"));
+        assert!(w.id().is_err());
+        assert_eq!(w.r#type, Some(WorkspaceKind::Special));
+        assert!(w.is_special());
+    }
+
+    /// A v0.56.2 payload (`id` only) still deserialises; the negative-id rule still decides specialness.
+    #[test]
+    fn a_v0562_payload_still_deserialises() {
+        let payload = r#"{
+            "id": -98,
+            "name": "special:magic",
+            "monitor": "DP-1",
+            "monitorID": 1,
+            "windows": 0,
+            "hasfullscreen": false,
+            "lastwindow": "0x0",
+            "lastwindowtitle": "",
+            "ispersistent": false,
+            "tiledLayout": "dwindle"
+        }"#;
+        let w: Workspace = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(w.address, None);
+        assert_eq!(w.id().unwrap(), -98);
+        assert_eq!(w.r#type, None);
+        assert!(w.is_special());
+    }
+
+    /// A rename changes `name`, not `address`.
+    #[test]
+    fn a_rename_changes_the_name_not_the_address() {
+        let tail = r#", "monitor": "DP-1", "monitorID": 1, "windows": 0,
+            "hasfullscreen": false, "lastwindow": "0x0", "lastwindowtitle": "",
+            "ispersistent": false, "tiledLayout": "dwindle"}"#;
+        let before =
+            format!(r#"{{"address": "special:magic", "type": "special", "name": "magic"{tail}"#);
+        let after =
+            format!(r#"{{"address": "special:magic", "type": "special", "name": "renamed"{tail}"#);
+        let first: Workspace = serde_json::from_str(&before).unwrap();
+        let second: Workspace = serde_json::from_str(&after).unwrap();
+
+        assert_eq!(first.address, second.address);
+        assert_ne!(first.name, second.name);
+    }
+
+    /// `Client.workspace`, `Monitor.activeWorkspace` and `Monitor.specialWorkspace` all hold a `WorkspaceBasic`.
+    #[test]
+    fn workspace_basic_takes_the_same_shape() {
+        let main_special = r#"{"address": "special:magic", "type": "special", "name": "magic"}"#;
+        let main_numbered = r#"{"address": "5", "id": 5, "type": "normal", "name": "5"}"#;
+        let legacy = r#"{"id": -98, "name": "special:magic"}"#;
+
+        let special: WorkspaceBasic = serde_json::from_str(main_special).unwrap();
+        assert!(special.id().is_err());
+        assert!(special.is_special());
+
+        let numbered: WorkspaceBasic = serde_json::from_str(main_numbered).unwrap();
+        assert_eq!(numbered.id().unwrap(), 5);
+        assert!(!numbered.is_special());
+
+        let old: WorkspaceBasic = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.id().unwrap(), -98);
+        assert!(old.is_special());
+    }
+
+    /// A `main`-shaped workspace round-trips through JSON.
+    #[test]
+    fn round_trips_through_json() {
+        let payload = r#"{"address": "special:magic", "type": "special", "name": "magic", "monitor": "DP-1", "monitorID": 1, "windows": 0, "hasfullscreen": false, "lastwindow": "0x0", "lastwindowtitle": "", "ispersistent": false, "tiledLayout": "dwindle"}"#;
+        let first: Workspace = serde_json::from_str(payload).unwrap();
+        let second: Workspace =
+            serde_json::from_str(&serde_json::to_string(&first).unwrap()).unwrap();
+        assert_eq!(first, second);
     }
 }
 
@@ -378,8 +559,7 @@ pub struct Client {
     pub xwayland: bool,
     /// Is this window pinned?
     pub pinned: bool,
-    /// Is the window pinned *and* fullscreened? Preserves the pinned state
-    /// while fullscreening (upstream `m_pinFullscreened`).
+    /// Is the window pinned *and* fullscreened (`m_pinFullscreened`).
     #[serde(default, rename = "pinFullscreened")]
     pub pin_fullscreened: bool,
     /// The internal fullscreen mode
@@ -387,21 +567,13 @@ pub struct Client {
     /// The client fullscreen mode
     #[serde(rename = "fullscreenClient")]
     pub fullscreen_client: FullscreenMode,
-    /// Which fullscreen handler manages this window (upstream
-    /// `getFullscreenHandlerNameAsString`): `"default"`, `"scrolling"` or
-    /// `"unknown"`.
+    /// The fullscreen handler (`getFullscreenHandlerNameAsString`): `"default"`, `"scrolling"` or `"unknown"`.
     #[serde(default, rename = "fullscreenHandler")]
     pub fullscreen_handler: String,
-    /// Whether the window may render over a fullscreen window (upstream
-    /// `m_allowedOverFullscreen`). This replaced the old `overFullscreen` key.
+    /// Whether the window may render over a fullscreen window (`m_allowedOverFullscreen`); replaced `overFullscreen`.
     #[serde(default, rename = "allowedOverFullscreen")]
     pub allowed_over_fullscreen: bool,
-    /// Whether the window was created over a fullscreen window
-    ///
-    /// Deprecated: Hyprland no longer emits `overFullscreen` — it was replaced
-    /// by [`Client::allowed_over_fullscreen`] — so this is always `false` on
-    /// current Hyprland. Kept so older payloads and downstream code keep
-    /// working.
+    /// Deprecated: Hyprland no longer emits `overFullscreen` (superseded by `allowed_over_fullscreen`), so this is always `false` on current Hyprland.
     #[deprecated(
         since = "0.5.0",
         note = "superseded by `allowed_over_fullscreen`; Hyprland no longer emits `overFullscreen`"
@@ -430,8 +602,7 @@ pub struct Client {
     /// The content type of the window
     #[serde(default, rename = "contentType")]
     pub content_type: String,
-    /// Hint to the compositor that this window should not be torn
-    /// (upstream `m_tearingHint`).
+    /// Hint to the compositor that this window should not be torn (`m_tearingHint`).
     #[serde(default, rename = "tearingHint")]
     pub tearing_hint: bool,
     /// The stable ID of the window for the `ext_foreign_toplevel_list_v1` protocol
@@ -1113,11 +1284,7 @@ mod client_tests {
 
     use super::*;
 
-    /// Hyprland's client JSON gained four keys — `pinFullscreened`,
-    /// `fullscreenHandler`, `allowedOverFullscreen`, `tearingHint` — and
-    /// dropped `overFullscreen`. All four must parse, and the dropped
-    /// key's absence must not break anything. Field list and value
-    /// shapes verified against `src/debug/HyprCtl.cpp` at `v0.56.2`.
+    /// The four v0.55 keys parse and the dropped `overFullscreen` key's absence breaks nothing. Shape from `HyprCtl.cpp` at `v0.56.2`.
     #[test]
     fn the_four_new_keys_parse() {
         let payload = r#"{
@@ -1164,9 +1331,7 @@ mod client_tests {
         assert!(!c.over_fullscreen);
     }
 
-    /// A payload from an older Hyprland — none of the four new keys —
-    /// must still deserialize. This is the regression #397 would have
-    /// introduced without `#[serde(default)]` on every new field.
+    /// An old payload (none of the four new keys) still deserialises — the regression #397 would have introduced.
     #[test]
     fn an_old_payload_still_deserialises() {
         let payload = r#"{
@@ -1198,9 +1363,7 @@ mod client_tests {
         assert!(!c.tearing_hint);
     }
 
-    /// The handler name is an open vocabulary upstream — the C++ switch
-    /// has a `default: return "unknown"` arm — so an unrecognised name
-    /// must not fail deserialization.
+    /// An unrecognised handler name is kept verbatim (the C++ switch has a `default: return "unknown"` arm).
     #[test]
     fn an_unknown_handler_name_is_kept_verbatim() {
         let payload = r#"{
