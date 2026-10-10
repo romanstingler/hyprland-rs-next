@@ -25,8 +25,30 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         name: Add caching
       - name: Run Clippy
-        run: cargo clippy --all-targets
-      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features
+      - name: Build docs
         run: cargo doc --no-deps --all-features
-      - name: Test all targets
+      - name: Build all feature combinations
         run: ./test.sh
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        name: Add caching
+      - name: Run tests
+        run: cargo test --all-features
+
+  doctest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        name: Add caching
+      - name: Run doctests
+        run: cargo test --all-features --doc

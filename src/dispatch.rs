@@ -4,7 +4,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,no_run
 //! use hyprland::Result;
 //! use hyprland::dispatch::{Dispatch, DispatchType};
 //! fn main() -> Result<()> {
@@ -777,7 +777,15 @@ pub enum FloatValue {
     Exact(f32),
 }
 
-pub(crate) fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<CommandContent> {
+/// Renders a dispatcher into the exact command string.
+///
+/// With `dispatch = true` this is the socket form, `dispatch <name> <args>`,
+/// wrapped in the JSON command flag — what `Dispatch::call` sends. With
+/// `dispatch = false` it is the bind form, `<name>,<args>`, with a comma only
+/// after the dispatcher name, wrapped in the empty command flag — what the
+/// `bind!` macro writes into the config, because Hyprland reads a bind line as
+/// `CVarList(value, 4)` (MODS,KEY,DISPATCHER,ARGS).
+pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<CommandContent> {
     use DispatchType::*;
     let sep = if dispatch { " " } else { "," };
     let string_to_pass = match &cmd {
@@ -919,7 +927,7 @@ pub struct Dispatch;
 impl Dispatch {
     /// This function calls a specified dispatcher (blocking)
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use hyprland::Result;
     /// # fn main() -> Result<()> {
     /// use hyprland::dispatch::{DispatchType,Dispatch};
@@ -933,7 +941,7 @@ impl Dispatch {
 
     /// This function calls a specified dispatcher (blocking)
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use hyprland::Result;
     /// # fn main() -> Result<()> {
     /// use hyprland::dispatch::{DispatchType,Dispatch};
@@ -958,7 +966,7 @@ impl Dispatch {
 
     /// This function calls a specified dispatcher (async)
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use hyprland::Result;
     /// #[tokio::main(flavor = "current_thread")]
     /// # async fn main() -> Result<()> {
@@ -975,7 +983,7 @@ impl Dispatch {
 
     /// This function calls a specified dispatcher (async)
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use hyprland::Result;
     /// #[tokio::main(flavor = "current_thread")]
     /// # async fn main() -> Result<()> {
