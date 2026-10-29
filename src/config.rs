@@ -246,10 +246,16 @@ pub mod binds {
         pub(crate) fn gen_lua_str(binding: Binding<'_>) -> crate::Result<String> {
             let key = Self::lua_key(binding.mods, &binding.key);
             let flags = Self::lua_flags(binding.flags)?;
+            let dispatcher = match &binding.dispatcher {
+                DispatchType::SetCursor(theme, size) => format!(
+                    "hl.dsp.exec_cmd({})",
+                    crate::lua::quote(&format!("hyprctl setcursor {theme} {size}"))
+                ),
+                dispatcher => gen_lua_dispatch_expr(dispatcher)?,
+            };
             Ok(format!(
-                "hl.bind({}, {}{flags})",
-                crate::lua::quote(&key),
-                gen_lua_dispatch_expr(&binding.dispatcher)?
+                "hl.bind({}, {dispatcher}{flags})",
+                crate::lua::quote(&key)
             ))
         }
 

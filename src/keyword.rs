@@ -494,7 +494,17 @@ fn lua_option_literal(value: &OptionValue) -> String {
         OptionValue::Int(int) => int.to_string(),
         OptionValue::Float(float) => float.to_string(),
         OptionValue::Bool(boolean) => boolean.to_string(),
-        OptionValue::String(string) => crate::lua::quote(string),
+        OptionValue::String(string) => {
+            if string.eq_ignore_ascii_case("true") || string.eq_ignore_ascii_case("false") {
+                string.to_ascii_lowercase()
+            } else if string.contains(['.', 'e', 'E'])
+                && string.parse::<f64>().is_ok_and(f64::is_finite)
+            {
+                string.to_string()
+            } else {
+                crate::lua::quote(string)
+            }
+        }
         OptionValue::Custom(custom) => crate::lua::quote(&custom.to_string()),
         OptionValue::Vec2([x, y]) => format!("{{ {x}, {y} }}"),
         OptionValue::Unknown(_) => "nil".to_string(),
@@ -1102,6 +1112,26 @@ mod conversion_tests {
         assert_eq!(
             lua_config_code("general:name", &value).unwrap(),
             "return hl.config({ [\"general\"] = { [\"name\"] = \"a\\\"b\\n\" } })"
+        );
+    }
+
+    #[test]
+    fn lua_config_infers_bool_and_float_strings() {
+        assert_eq!(
+            lua_config_code(
+                "decoration:blur:size",
+                &OptionValue::String("0.5".to_string())
+            )
+            .unwrap(),
+            r#"return hl.config({ ["decoration"] = { ["blur"] = { ["size"] = 0.5 } } })"#
+        );
+        assert_eq!(
+            lua_config_code(
+                "decoration:blur:enabled",
+                &OptionValue::String("true".to_string())
+            )
+            .unwrap(),
+            r#"return hl.config({ ["decoration"] = { ["blur"] = { ["enabled"] = true } } })"#
         );
     }
 

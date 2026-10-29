@@ -51,8 +51,11 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         CenterWindow,
         ResizeActive(Position::Delta(10, -10)),
         MoveActive(Position::Exact(100, 200)),
+        ResizeActive(Position::DeltaFraction(10, 20)),
+        MoveActive(Position::ExactFraction(50, 50)),
         ResizeWindowPixel(Position::Delta(5, 5), window()),
         MoveWindowPixel(Position::Exact(1, 2), window()),
+        MoveWindowPixel(Position::DeltaFraction(10, 20), window()),
         CycleWindow(CycleDirection::Next),
         SwapNext(CycleDirection::Previous),
         SwapWindow(Direction::Right),
@@ -122,7 +125,7 @@ fn every_supported_variant_renders_a_dispatcher_expression() {
     for dispatcher in all_supported() {
         let rendered = expr(dispatcher.clone());
         assert!(
-            rendered.starts_with("hl.dsp."),
+            rendered.starts_with("hl.dsp.") || rendered.starts_with("(function"),
             "{dispatcher:?} rendered as {rendered}"
         );
     }
@@ -194,13 +197,22 @@ fn window_positions_are_relative_where_legacy_deltas_were() {
 }
 
 #[test]
-fn fractional_positions_are_unsupported() {
-    for position in [
-        Position::DeltaFraction(10, 20),
-        Position::ExactFraction(10, 20),
-    ] {
-        assert!(gen_lua_dispatch_expr(&DispatchType::MoveActive(position)).is_err());
-    }
+fn fractional_positions_are_computed_at_dispatch_time() {
+    assert_eq!(
+        expr(DispatchType::MoveActive(Position::DeltaFraction(10, 20))),
+        "(function(w) if not w then return hl.dsp.no_op() end return hl.dsp.window.move({ x = w.at.x * 0.1, y = w.at.y * 0.2, relative = true }) end)(hl.get_active_window())"
+    );
+    assert_eq!(
+        expr(DispatchType::ResizeActive(Position::ExactFraction(50, 50))),
+        "(function(m) if not m then return hl.dsp.no_op() end return hl.dsp.window.resize({ x = m.width * 0.5, y = m.height * 0.5 }) end)(hl.get_active_monitor())"
+    );
+    assert_eq!(
+        expr(DispatchType::MoveWindowPixel(
+            Position::DeltaFraction(10, 20),
+            WindowIdentifier::ClassRegularExpression("kitty")
+        )),
+        "(function(w) if not w then return hl.dsp.no_op() end return hl.dsp.window.move({ x = w.at.x * 0.1, y = w.at.y * 0.2, relative = true, window = \"class:kitty\" }) end)(hl.get_window(\"class:kitty\"))"
+    );
 }
 
 #[test]
@@ -309,5 +321,16 @@ fn bind_flags_are_rendered() {
     assert_eq!(
         Binder::gen_lua_bind_str(binding).unwrap(),
         r#"hl.bind("SUPER + SHIFT + Q", hl.dsp.window.close(), { locked = true, repeating = true })"#
+    );
+
+    let set_cursor = Binding {
+        mods: &[Mod::SUPER],
+        key: Key::Key("C"),
+        flags: &[],
+        dispatcher: DispatchType::SetCursor("Adwaita", 24),
+    };
+    assert_eq!(
+        Binder::gen_lua_bind_str(set_cursor).unwrap(),
+        r#"hl.bind("SUPER + C", hl.dsp.exec_cmd("hyprctl setcursor Adwaita 24"))"#
     );
 }

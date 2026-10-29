@@ -977,25 +977,32 @@ fn lua_position_call(
     position: &Position,
     window: Option<&WindowIdentifier<'_>>,
 ) -> crate::Result<String> {
-    let (x, y, relative) = match position {
-        Position::Delta(x, y) => (*x as i64, *y as i64, true),
-        Position::Exact(x, y) => (*x as i64, *y as i64, false),
-        _ => {
-            return Err(crate::HyprError::Unsupported(
-                "fractional window positions on a Lua session".to_string(),
-            ));
+    let window_arg = window
+        .map(|window| format!(", window = {}", crate::lua::quote(&window.to_string())))
+        .unwrap_or_default();
+
+    match position {
+        Position::Delta(x, y) | Position::Exact(x, y) => {
+            let relative = matches!(position, Position::Delta(_, _));
+            Ok(format!(
+                "hl.dsp.window.{function}({{ x = {x}, y = {y}, relative = {relative}{window_arg} }})"
+            ))
         }
-    };
-
-    let mut args = format!("x = {x}, y = {y}, relative = {relative}");
-    if let Some(window) = window {
-        args.push_str(&format!(
-            ", window = {}",
-            crate::lua::quote(&window.to_string())
-        ));
+        Position::DeltaFraction(x, y) => Ok(format!(
+            "(function(w) if not w then return hl.dsp.no_op() end return hl.dsp.window.{function}({{ x = w.{field}.x * {x}, y = w.{field}.y * {y}, relative = true{window_arg} }}) end)({target})",
+            field = if function == "move" { "at" } else { "size" },
+            target = window
+                .map(|window| format!("hl.get_window({})", crate::lua::quote(&window.to_string())))
+                .unwrap_or_else(|| "hl.get_active_window()".to_string()),
+            x = *x as f64 / 100.0,
+            y = *y as f64 / 100.0,
+        )),
+        Position::ExactFraction(x, y) => Ok(format!(
+            "(function(m) if not m then return hl.dsp.no_op() end return hl.dsp.window.{function}({{ x = m.width * {x}, y = m.height * {y}{window_arg} }}) end)(hl.get_active_monitor())",
+            x = *x as f64 / 100.0,
+            y = *y as f64 / 100.0,
+        )),
     }
-
-    Ok(format!("hl.dsp.window.{function}({{ {args} }})"))
 }
 
 fn lua_layout_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
