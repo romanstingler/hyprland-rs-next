@@ -848,8 +848,8 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
         TagWindow(act, tag, None) => format!("tagwindow{sep}{act}{tag}"),
         FocusWindow(win) => format!("focuswindow{sep}{win}"),
         FocusMonitor(mon) => format!("focusmonitor{sep}{mon}"),
-        ChangeSplitRatio(fv) => format!("splitratio{sep}{fv}"),
-        ToggleOpaque => "toggleopaque".to_string(),
+        ChangeSplitRatio(fv) => format!("layoutmsg{sep}splitratio {fv}"),
+        ToggleOpaque => format!("setprop{sep}opaque toggle"),
         MoveCursorToCorner(corner) => format!("movecursortocorner{sep}{}", corner.clone() as u8),
         MoveCursor(x, y) => format!("movecursor{sep}{x} {y}"),
         WorkspaceOption(opt) => format!("workspaceopt{sep}{opt}"),
@@ -1062,8 +1062,8 @@ mod tests {
             ),
             (
                 DispatchType::ChangeSplitRatio(FloatValue::Relative(-0.05)),
-                "dispatch splitratio -0.05",
-                "splitratio,-0.05",
+                "dispatch layoutmsg splitratio -0.05",
+                "layoutmsg,splitratio -0.05",
             ),
             (
                 DispatchType::ToggleSpecialWorkspace(Some("scratch".to_owned())),

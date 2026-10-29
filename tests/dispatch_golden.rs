@@ -288,8 +288,8 @@ fn window_state_dispatchers() {
         ),
         (
             DispatchType::ToggleOpaque,
-            "dispatch toggleopaque",
-            "toggleopaque",
+            "dispatch setprop opaque toggle",
+            "setprop,opaque toggle",
         ),
         (
             DispatchType::ToggleSwallow,
@@ -450,13 +450,13 @@ fn focus_move_and_resize_dispatchers() {
         ),
         (
             DispatchType::ChangeSplitRatio(FloatValue::Relative(-0.05)),
-            "dispatch splitratio -0.05",
-            "splitratio,-0.05",
+            "dispatch layoutmsg splitratio -0.05",
+            "layoutmsg,splitratio -0.05",
         ),
         (
             DispatchType::ChangeSplitRatio(FloatValue::Exact(0.75)),
-            "dispatch splitratio exact 0.75",
-            "splitratio,exact 0.75",
+            "dispatch layoutmsg splitratio exact 0.75",
+            "layoutmsg,splitratio exact 0.75",
         ),
     ];
 
