@@ -450,8 +450,8 @@ fn focus_move_and_resize_dispatchers() {
         ),
         (
             DispatchType::ChangeSplitRatio(FloatValue::Exact(0.75)),
-            "dispatch layoutmsg splitratio exact 0.75",
-            "layoutmsg,splitratio exact 0.75",
+            "dispatch layoutmsg splitratio 0.75 exact",
+            "layoutmsg,splitratio 0.75 exact",
         ),
     ];
 

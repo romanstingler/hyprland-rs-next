@@ -36,6 +36,10 @@ Hyprland version, so one binary keeps working on both. `Dispatch`, `Keyword`
 and `Binder` select the matching grammar automatically; the legacy path is
 unchanged.
 
+All generated Lua dispatcher expressions are construction-validated against a
+live Hyprland 0.56.2 Lua session: `eval return hl.dsp...` returns `ok` for every
+supported `DispatchType`, without executing it.
+
 Known Lua limits: `Custom`, `ToggleFakeFullscreen`, `WorkspaceOption`, and the
 `MultiKey`/`HasDescription` bind flags have no Lua equivalent and return
 `HyprError::Unsupported`. `DispatchType::Lua(&str)` is the escape hatch for

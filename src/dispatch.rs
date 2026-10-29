@@ -963,7 +963,12 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
         }
         FocusWindow(win) => format!("focuswindow{sep}{win}"),
         FocusMonitor(mon) => format!("focusmonitor{sep}{mon}"),
-        ChangeSplitRatio(fv) => format!("layoutmsg{sep}splitratio {fv}"),
+        ChangeSplitRatio(FloatValue::Relative(fv)) => {
+            format!("layoutmsg{sep}splitratio {fv}")
+        }
+        ChangeSplitRatio(FloatValue::Exact(fv)) => {
+            format!("layoutmsg{sep}splitratio {fv} exact")
+        }
         ToggleOpaque => format!("setprop{sep}activewindow opaque toggle"),
         MoveCursorToCorner(corner) => format!("movecursortocorner{sep}{}", corner.clone() as u8),
         MoveCursor(x, y) => format!("movecursor{sep}{x} {y}"),
@@ -1299,7 +1304,7 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
         },
         SwapNext(direction) => match direction {
             CycleDirection::Next => "hl.dsp.window.swap({ next = true })".to_string(),
-            CycleDirection::Previous => "hl.dsp.window.swap({ next = false })".to_string(),
+            CycleDirection::Previous => "hl.dsp.window.swap({ prev = true })".to_string(),
         },
         CycleWindowFiltered(direction, tiled, floating) => {
             let mut args = format!("next = {}", matches!(direction, CycleDirection::Next));

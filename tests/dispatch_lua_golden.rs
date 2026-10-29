@@ -287,7 +287,7 @@ fn layout_dispatchers_go_through_layoutmsg() {
     );
     assert_eq!(
         expr(DispatchType::ChangeSplitRatio(FloatValue::Exact(0.5))),
-        r#"hl.dsp.layout("splitratio exact 0.5")"#
+        r#"hl.dsp.layout("splitratio 0.5 exact")"#
     );
     assert_eq!(
         expr(DispatchType::MoveToRoot(
@@ -317,6 +317,10 @@ fn window_swap_and_filter_dispatchers() {
             Some(false)
         )),
         "hl.dsp.window.cycle_next({ next = true, tiled = true, floating = false })"
+    );
+    assert_eq!(
+        expr(DispatchType::SwapNext(CycleDirection::Previous)),
+        "hl.dsp.window.swap({ prev = true })"
     );
 }
 

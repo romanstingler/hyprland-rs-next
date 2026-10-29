@@ -1,5 +1,30 @@
 # Migration Guide
 
+## `0.5.x` ⟶ `0.6.0`
+
+`0.6.0` adds **Lua-config support** for Hyprland 0.56.x while keeping the legacy `.conf`
+path. The config provider is detected at runtime from `hyprctl status`, not from the
+Hyprland version.
+
+1. **`Dispatch`, `Keyword` and `Binder` now select the grammar automatically.** No call-site
+   change is needed. `Instance::capabilities()` / `uses_lua_config()` expose the detected
+   provider.
+2. **New `DispatchType` variants.** `Lua(&str)` is the raw escape hatch for argument
+   combinations the typed variants do not model. Typed additions include `Event`,
+   `ForceIdle`, `ReleaseInputCapture`, `NoOp`, `Layout`, `WindowDrag`, `WindowResize`,
+   `ResizeWindowKeepAspectRatio`, `ClearTags`, `SetProp`, `ChangeWorkspaceId`,
+   `SwapWindowWith`, `SendKeyState`, and `CycleWindowFiltered`.
+3. **New `Flag` variants.** `AutoConsuming`, `LongPress`, `Click`, `Drag`, `SubMapUniversal`,
+   and `AllowInputCapture`.
+4. **`ToggleFakeFullscreen` is now an error** on both providers: Hyprland removed
+   `fakefullscreen` before 0.54.
+5. **`Keyword::set` under Lua** rejects legacy top-level directives (`monitor`, `windowrule`,
+   `env`, ...) because they are Lua config functions, not `hl.config` values.
+6. **Lua-only dispatchers** (`NoOp`, `ClearTags`, `ChangeWorkspaceId`) return
+   `HyprError::Unsupported` on a `.conf` session. `Custom` has no Lua form; use
+   `DispatchType::Lua`.
+7. `MultiKey` and `HasDescription` bind flags still return `Unsupported` under Lua.
+
 ## `0.4.x` ⟶ `0.5.0`
 
 `0.5.0` is the last release built around the **legacy (`.conf`) Hyprland config path**
