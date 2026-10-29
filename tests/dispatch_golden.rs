@@ -786,8 +786,9 @@ fn removed_fakefullscreen_is_rejected() {
 }
 
 #[test]
-fn no_op_is_lua_only() {
+fn no_op_and_reload_config_are_lua_only() {
     assert!(gen_dispatch_str(DispatchType::NoOp, true).is_err());
+    assert!(gen_dispatch_str(DispatchType::ReloadConfig, true).is_err());
 }
 
 #[test]

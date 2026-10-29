@@ -36,9 +36,16 @@ Hyprland version, so one binary keeps working on both. `Dispatch`, `Keyword`
 and `Binder` select the matching grammar automatically; the legacy path is
 unchanged.
 
-All generated Lua dispatcher expressions are construction-validated against a
-live Hyprland 0.56.2 Lua session: `eval return hl.dsp...` returns `ok` for every
-supported `DispatchType`, without executing it.
+The `0.7.0` line adds **Hyprland 0.57 support**. Workspace identity is now one
+type — `WorkspaceBasic` — for data and every workspace event: `address`,
+`type`, `id()` and `is_special()`. Special workspaces without a numeric id are
+identified by `address`; the empty `specialWorkspace` sentinel is reported as
+absent. The 0.57 `reload_config` dispatcher and `group.lock({ all = true })`
+are covered.
+
+All generated Lua dispatcher expressions are construction-validated against
+live Hyprland 0.56.2 and 0.57.0 Lua sessions: `eval return hl.dsp...` returns
+`ok` for every supported `DispatchType`, without executing it.
 
 Known Lua limits: `Custom`, `ToggleFakeFullscreen`, `WorkspaceOption`, and the
 `MultiKey`/`HasDescription` bind flags have no Lua equivalent and return

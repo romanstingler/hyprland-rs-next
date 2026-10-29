@@ -83,6 +83,7 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         ChangeWorkspaceId(WorkspaceIdentifierWithSpecial::Id(3), 7),
         Exit,
         ForceRendererReload,
+        ReloadConfig,
         MoveCurrentWorkspaceToMonitor(monitor()),
         MoveWorkspaceToMonitor(WorkspaceIdentifier::Id(3), monitor()),
         SwapActiveWorkspaces(MonitorIdentifier::Id(0), MonitorIdentifier::Id(1)),
@@ -181,6 +182,7 @@ fn top_level_lua_dispatchers() {
         "hl.dsp.release_input_capture()"
     );
     assert_eq!(expr(DispatchType::NoOp), "hl.dsp.no_op()");
+    assert_eq!(expr(DispatchType::ReloadConfig), "hl.dsp.reload_config()");
     assert_eq!(
         expr(DispatchType::Layout("custom")),
         r#"hl.dsp.layout("custom")"#
@@ -338,7 +340,7 @@ fn group_and_fullscreen_dispatchers() {
     );
     assert_eq!(
         expr(DispatchType::LockGroups(LockType::Lock)),
-        r#"hl.dsp.group.lock({ action = "enable" })"#
+        r#"hl.dsp.group.lock({ action = "enable", all = true })"#
     );
     assert_eq!(
         expr(DispatchType::ToggleFullscreen(FullscreenType::Real)),

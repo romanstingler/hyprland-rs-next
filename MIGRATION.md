@@ -1,5 +1,30 @@
 # Migration Guide
 
+## `0.6.0` ⟶ `0.7.0`
+
+`0.7.0` adds Hyprland **0.57.0** support. Hyprland now identifies workspaces by an
+`addressableName` (`"3"`, `"special:magic"`, or a named workspace) instead of always sending
+a numeric id. The crate uses one identity type for data and events.
+
+1. **Workspace events use `WorkspaceBasic`.**
+   - `Event::WorkspaceChanged` / `WorkspaceAdded` / `WorkspaceDeleted` now carry
+     `WorkspaceBasic` directly (`WorkspaceEventData` is a type alias).
+   - `WorkspaceBasic::id` became the fallible accessor `id()`. Special and named workspaces
+     may have no numeric id; identify them with `address` and `is_special()`.
+   - `WorkspaceBasic::address` is the `addressableName`; `r#type` is `Normal`/`Special`.
+2. **Nested workspace fields.** `WorkspaceMovedEventData`, `WindowMoveEvent`,
+   `WindowOpenEvent`, `MonitorEventData`, `MonitorV2EventData`, `ChangedSpecialEventData`
+   and `ChangedSpecialV2EventData` now expose `workspace: WorkspaceBasic` instead of
+   `workspace_id` / `workspace_name` pairs.
+3. **Empty special workspace.** The 0.57 `specialWorkspace: { address = "", type = "", name = "" }`
+   sentinel deserialises as `address = None`, `type = None`; `name` remains `""`.
+4. **New dispatchers.** `DispatchType::ReloadConfig` renders `hl.dsp.reload_config()` on 0.57
+   Lua sessions (legacy returns `Unsupported`). `LockGroups` now renders
+   `group.lock({ action, all = true })`; `LockActiveGroup` still uses the deprecated
+   `lock_active` form so it keeps working on 0.56.x.
+5. **Events accept both shapes.** Parsers detect a numeric first field (0.56) versus an
+   addressable name (0.57), so 0.56.x remains supported.
+
 ## `0.5.x` ⟶ `0.6.0`
 
 `0.6.0` adds **Lua-config support** for Hyprland 0.56.x while keeping the legacy `.conf`

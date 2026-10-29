@@ -528,6 +528,29 @@ fn lua_config_code(key: &str, value: &OptionValue) -> crate::Result<String> {
     Ok(format!("return hl.config({table})"))
 }
 
+fn option_value_from_json(value: &serde_json::Value) -> OptionValue {
+    match value {
+        serde_json::Value::Bool(boolean) => OptionValue::Bool(*boolean),
+        serde_json::Value::Number(number) => number.as_i64().map_or_else(
+            || {
+                number.as_f64().map_or_else(
+                    || OptionValue::Unknown(number.to_string()),
+                    OptionValue::Float,
+                )
+            },
+            OptionValue::Int,
+        ),
+        serde_json::Value::String(string) => OptionValue::String(string.clone()),
+        serde_json::Value::Array(values) if values.len() == 2 => {
+            match (values[0].as_i64(), values[1].as_i64()) {
+                (Some(x), Some(y)) => OptionValue::Vec2([x, y]),
+                _ => OptionValue::Unknown(value.to_string()),
+            }
+        }
+        _ => OptionValue::Unknown(value.to_string()),
+    }
+}
+
 impl Keyword {
     /// This function sets a keyword's value
     pub fn set<Str: ToString, Opt: Into<OptionValue>>(key: Str, value: Opt) -> crate::Result<()> {
@@ -593,9 +616,14 @@ impl Keyword {
 
     /// This function returns the value of a keyword
     pub fn instance_get<Str: ToString>(instance: &Instance, key: Str) -> crate::Result<Self> {
-        let data = instance.write_to_socket(command!(JSON, "getoption {}", key.to_string()))?;
+        let key = key.to_string();
+        let data = instance.write_to_socket(command!(JSON, "getoption {key}"))?;
         if data == "no such option" {
-            return Err(crate::error::HyprError::InvalidOptionKey(key.to_string()));
+            return Err(crate::error::HyprError::InvalidOptionKey(key));
+        }
+        if data == "invalid type (internal error)" {
+            return Self::instance_get_from_descriptions(instance, &key)?
+                .ok_or_else(|| crate::HyprError::Other(data));
         }
         let mut deserialized: OptionRaw = serde_json::from_str(&data)?;
         deserialized.json = data;
@@ -607,6 +635,39 @@ impl Keyword {
             set: deserialized.set,
         };
         Ok(keyword)
+    }
+
+    fn instance_get_from_descriptions(
+        instance: &Instance,
+        key: &str,
+    ) -> crate::Result<Option<Self>> {
+        let descriptions = OptionDescriptions::instance_get(instance)?;
+        Ok(descriptions
+            .to_vec()
+            .into_iter()
+            .find(|description| description.name == key || description.dotted_name() == key)
+            .map(|description| Self {
+                option: description.name,
+                value: option_value_from_json(&description.current),
+                set: false,
+            }))
+    }
+
+    #[cfg(any(feature = "async-lite", feature = "tokio"))]
+    async fn instance_get_from_descriptions_async(
+        instance: &Instance,
+        key: &str,
+    ) -> crate::Result<Option<Self>> {
+        let descriptions = OptionDescriptions::instance_get_async(instance).await?;
+        Ok(descriptions
+            .to_vec()
+            .into_iter()
+            .find(|description| description.name == key || description.dotted_name() == key)
+            .map(|description| Self {
+                option: description.name,
+                value: option_value_from_json(&description.current),
+                set: false,
+            }))
     }
 
     /// This function returns the value of a keyword (async)
@@ -621,11 +682,17 @@ impl Keyword {
         instance: &Instance,
         key: Str,
     ) -> crate::Result<Self> {
+        let key = key.to_string();
         let data = instance
-            .write_to_socket_async(command!(JSON, "getoption {}", key.to_string()))
+            .write_to_socket_async(command!(JSON, "getoption {key}"))
             .await?;
         if data == "no such option" {
-            return Err(crate::error::HyprError::InvalidOptionKey(key.to_string()));
+            return Err(crate::error::HyprError::InvalidOptionKey(key));
+        }
+        if data == "invalid type (internal error)" {
+            return Self::instance_get_from_descriptions_async(instance, &key)
+                .await?
+                .ok_or_else(|| crate::HyprError::Other(data));
         }
         let mut deserialized: OptionRaw = serde_json::from_str(&data)?;
         deserialized.json = data;
@@ -1076,6 +1143,30 @@ mod conversion_tests {
             matches!(v, OptionValue::Custom(Custom::HyprGradient(_))),
             "got {v:?}"
         );
+    }
+
+    #[test]
+    fn descriptions_json_maps_to_option_values() {
+        assert!(matches!(
+            option_value_from_json(&serde_json::json!(2)),
+            OptionValue::Int(2)
+        ));
+        assert!(matches!(
+            option_value_from_json(&serde_json::json!(0.5)),
+            OptionValue::Float(0.5)
+        ));
+        assert!(matches!(
+            option_value_from_json(&serde_json::json!(true)),
+            OptionValue::Bool(true)
+        ));
+        assert!(matches!(
+            option_value_from_json(&serde_json::json!("400")),
+            OptionValue::String(value) if value == "400"
+        ));
+        assert!(matches!(
+            option_value_from_json(&serde_json::json!([3, 4])),
+            OptionValue::Vec2([3, 4])
+        ));
     }
 
     #[test]

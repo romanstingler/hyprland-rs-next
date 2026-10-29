@@ -1,3 +1,4 @@
+use crate::data::WorkspaceBasic;
 use crate::shared::*;
 use std::{fmt::Debug, pin::Pin};
 
@@ -265,10 +266,8 @@ pub struct ScreencastV2EventData {
 pub struct WindowMoveEvent {
     /// Window address
     pub window_address: Address,
-    /// the workspace id
-    pub workspace_id: WorkspaceId,
-    /// The workspace name
-    pub workspace_name: WorkspaceType,
+    /// The workspace identity
+    pub workspace: WorkspaceBasic,
 }
 
 /// The data for the event executed when opening a new window
@@ -276,8 +275,8 @@ pub struct WindowMoveEvent {
 pub struct WindowOpenEvent {
     /// Window address
     pub window_address: Address,
-    /// The workspace name
-    pub workspace_name: String,
+    /// The workspace identity
+    pub workspace: WorkspaceBasic,
     /// Window class
     pub window_class: String,
     /// Window title
@@ -423,32 +422,17 @@ pub(crate) async fn execute_closure_async<T>(f: &AsyncClosure<T>, val: T) {
     f(val).await;
 }
 
-/// This struct holds workspace event data
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkspaceEventData {
-    /// The workspace name
-    pub name: WorkspaceType,
-    /// The window id
-    pub id: WorkspaceId,
-}
+/// The workspace identity carried by a workspace event.
+pub type WorkspaceEventData = WorkspaceBasic;
 
-/// This struct holds workspace event data
-/// when the workspace cannot be special
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NonSpecialWorkspaceEventData {
-    /// The workspace name
-    pub name: String,
-    /// The window id
-    pub id: WorkspaceId,
-}
+/// The workspace identity carried by a rename event.
+pub type NonSpecialWorkspaceEventData = WorkspaceBasic;
 
 /// This struct holds workspace moved event data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceMovedEventData {
-    /// The workspace name
-    pub name: WorkspaceType,
-    /// The window id
-    pub id: WorkspaceId,
+    /// The workspace identity
+    pub workspace: WorkspaceBasic,
     /// The monitor name
     pub monitor: String,
 }
@@ -478,8 +462,8 @@ pub struct WindowEventData {
 pub struct MonitorEventData {
     /// The monitor name
     pub monitor_name: String,
-    /// The workspace name
-    pub workspace_name: Option<WorkspaceType>,
+    /// The workspace identity, absent when no workspace is focused
+    pub workspace: Option<WorkspaceBasic>,
 }
 
 /// This struct holds the data for the `focusedmonv2` event
@@ -487,8 +471,8 @@ pub struct MonitorEventData {
 pub struct MonitorV2EventData {
     /// The monitor name
     pub monitor_name: String,
-    /// The workspace id
-    pub workspace_id: WorkspaceId,
+    /// The workspace identity
+    pub workspace: WorkspaceBasic,
 }
 
 /// This struct holds changed special event data
@@ -496,17 +480,15 @@ pub struct MonitorV2EventData {
 pub struct ChangedSpecialEventData {
     /// The monitor name
     pub monitor_name: String,
-    /// The workspace name
-    pub workspace_name: String,
+    /// The workspace identity
+    pub workspace: WorkspaceBasic,
 }
 
 /// This struct holds the data for the `activespecialv2` event
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangedSpecialV2EventData {
-    /// The workspace id
-    pub workspace_id: WorkspaceId,
-    /// The workspace name
-    pub workspace_name: WorkspaceType,
+    /// The workspace identity
+    pub workspace: WorkspaceBasic,
     /// The monitor name
     pub monitor_name: String,
 }
@@ -744,23 +726,6 @@ pub enum Event {
     ScreencastV2(ScreencastV2EventData),
 }
 
-fn parse_string_as_work(str: String) -> WorkspaceType {
-    if str == "special" {
-        WorkspaceType::Special(None)
-    } else if str.starts_with("special:") {
-        {
-            let mut iter = str.split(':');
-            iter.next();
-            match iter.next() {
-                Some(name) => WorkspaceType::Special(Some(name.to_string())),
-                None => WorkspaceType::Special(None),
-            }
-        }
-    } else {
-        WorkspaceType::Regular(str)
-    }
-}
-
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
 pub(crate) enum ParsedEventType {
     WorkspaceChangedV2,
@@ -936,42 +901,34 @@ pub(crate) fn event_parser(event: &str) -> crate::Result<Vec<Event>> {
         Err(x) => Err(x),
         Ok(Either::Right((name, args))) => Ok(Event::Unknown(UnknownEventData { name, args })),
         Ok(Either::Left((event_type, args))) => match event_type {
-            ParsedEventType::WorkspaceChangedV2 => {
-                Ok(Event::WorkspaceChanged(WorkspaceEventData {
-                    id: parse_int!(get![ref args;0], event: "WorkspaceChangedV2"),
-                    name: parse_string_as_work(get![args;1]),
-                }))
-            }
-            ParsedEventType::WorkspaceDeletedV2 => {
-                Ok(Event::WorkspaceDeleted(WorkspaceEventData {
-                    id: parse_int!(get![ref args;0], event: "WorkspaceDeletedV2"),
-                    name: parse_string_as_work(get![args;1]),
-                }))
-            }
-            ParsedEventType::WorkspaceAddedV2 => Ok(Event::WorkspaceAdded(WorkspaceEventData {
-                id: parse_int!(get![ref args;0], event: "WorkspaceAddedV2"),
-                name: parse_string_as_work(get![args;1]),
-            })),
+            ParsedEventType::WorkspaceChangedV2 => Ok(Event::WorkspaceChanged(
+                WorkspaceBasic::from_event_fields(get![ref args;0], get![ref args;1]),
+            )),
+            ParsedEventType::WorkspaceDeletedV2 => Ok(Event::WorkspaceDeleted(
+                WorkspaceBasic::from_event_fields(get![ref args;0], get![ref args;1]),
+            )),
+            ParsedEventType::WorkspaceAddedV2 => Ok(Event::WorkspaceAdded(
+                WorkspaceBasic::from_event_fields(get![ref args;0], get![ref args;1]),
+            )),
             ParsedEventType::WorkspaceMovedV2 => {
                 Ok(Event::WorkspaceMoved(WorkspaceMovedEventData {
-                    id: parse_int!(get![ref args;0], event: "WorkspaceMovedV2"),
-                    name: parse_string_as_work(get![args;1]),
+                    workspace: WorkspaceBasic::from_event_fields(
+                        get![ref args;0],
+                        get![ref args;1],
+                    ),
                     monitor: get![args;2],
                 }))
             }
-            ParsedEventType::WorkspaceRename => {
-                Ok(Event::WorkspaceRenamed(NonSpecialWorkspaceEventData {
-                    id: parse_int!(get![args;0], event: "WorkspaceRenamed"),
-                    name: get![args;1],
-                }))
-            }
+            ParsedEventType::WorkspaceRename => Ok(Event::WorkspaceRenamed(
+                WorkspaceBasic::from_event_fields(get![ref args;0], get![ref args;1]),
+            )),
             ParsedEventType::ActiveMonitorChanged => {
                 Ok(Event::ActiveMonitorChanged(MonitorEventData {
                     monitor_name: get![args;0],
-                    workspace_name: if get![args;1] == "?" {
+                    workspace: if get![ref args;1] == "?" {
                         None
                     } else {
-                        Some(parse_string_as_work(get![args;1]))
+                        Some(WorkspaceBasic::from_event_address(get![ref args;1]))
                     },
                 }))
             }
@@ -1006,15 +963,14 @@ pub(crate) fn event_parser(event: &str) -> crate::Result<Vec<Event>> {
             })),
             ParsedEventType::WindowOpened => Ok(Event::WindowOpened(WindowOpenEvent {
                 window_address: Address::new(get![ref args;0]),
-                workspace_name: get![args;1],
+                workspace: WorkspaceBasic::from_event_address(get![ref args;1]),
                 window_class: get![args;2],
                 window_title: get![args;3],
             })),
             ParsedEventType::WindowClosed => Ok(Event::WindowClosed(Address::new(get![args;0]))),
             ParsedEventType::WindowMovedV2 => Ok(Event::WindowMoved(WindowMoveEvent {
                 window_address: Address::new(get![ref args;0]),
-                workspace_id: parse_int!(get![ref args;1], event: "WindowMoved"),
-                workspace_name: parse_string_as_work(get![args;2]),
+                workspace: WorkspaceBasic::from_event_fields(get![ref args;1], get![ref args;2]),
             })),
             ParsedEventType::ActiveSpecial => {
                 let workspace_name = get![args;0];
@@ -1024,7 +980,7 @@ pub(crate) fn event_parser(event: &str) -> crate::Result<Vec<Event>> {
                 } else {
                     Ok(Event::ChangedSpecial(ChangedSpecialEventData {
                         monitor_name,
-                        workspace_name,
+                        workspace: WorkspaceBasic::from_event_address(&workspace_name),
                     }))
                 }
             }
@@ -1117,8 +1073,7 @@ pub(crate) fn event_parser(event: &str) -> crate::Result<Vec<Event>> {
                     Ok(Event::SpecialRemovedV2(monitor_name))
                 } else {
                     Ok(Event::ChangedSpecialV2(ChangedSpecialV2EventData {
-                        workspace_id: parse_int!(workspace_id, event: "ChangedSpecialV2"),
-                        workspace_name: parse_string_as_work(workspace_name),
+                        workspace: WorkspaceBasic::from_event_fields(workspace_id, &workspace_name),
                         monitor_name,
                     }))
                 }
@@ -1126,7 +1081,7 @@ pub(crate) fn event_parser(event: &str) -> crate::Result<Vec<Event>> {
             ParsedEventType::ActiveMonitorChangedV2 => {
                 Ok(Event::ActiveMonitorChangedV2(MonitorV2EventData {
                     monitor_name: get![args;0],
-                    workspace_id: parse_int!(get![ref args;1], event: "ActiveMonitorChangedV2"),
+                    workspace: WorkspaceBasic::from_event_address(get![ref args;1]),
                 }))
             }
             ParsedEventType::MonitorRemovedV2 => {
@@ -1320,31 +1275,144 @@ mod new_events_tests {
         assert_eq!(monitor, "DP-1");
     }
 
-    /// Upstream sends `activespecialv2>>{id},{name},{monitor}`; the id is
-    /// negative for special workspaces (`Monitor.cpp:1689`).
+    /// 0.57 sends `activespecialv2>>{addressableName},{displayName},{monitor}`.
     #[test]
-    fn activespecialv2_carries_id_name_and_monitor() {
-        let Event::ChangedSpecialV2(data) = parse("activespecialv2>>-98,special:magic,DP-1") else {
+    fn activespecialv2_carries_the_addressable_identity() {
+        let Event::ChangedSpecialV2(data) =
+            parse("activespecialv2>>special:magic,special:magic,DP-1")
+        else {
             panic!("expected ChangedSpecialV2");
         };
-        assert_eq!(data.workspace_id, -98);
         assert_eq!(
-            data.workspace_name,
-            WorkspaceType::Special(Some("magic".to_string()))
+            data.workspace.address.as_ref().map(AsRef::as_ref),
+            Some("special:magic")
         );
+        assert!(data.workspace.is_special());
+        assert!(data.workspace.id().is_err());
         assert_eq!(data.monitor_name, "DP-1");
     }
 
-    /// Upstream sends `focusedmonv2>>{monitor},{workspace_id}`
-    /// (`FocusState.cpp:288`). The workspace id carries the same
-    /// negative-id convention as `workspacev2`.
+    /// 0.56 sends a negative id followed by the special name.
     #[test]
-    fn focusedmonv2_carries_monitor_and_workspace_id() {
+    fn activespecialv2_accepts_the_legacy_id_shape() {
+        let Event::ChangedSpecialV2(data) = parse("activespecialv2>>-98,special:magic,DP-1") else {
+            panic!("expected ChangedSpecialV2");
+        };
+        assert_eq!(data.workspace.id().unwrap(), -98);
+        assert!(data.workspace.is_special());
+        assert_eq!(
+            data.workspace.address.as_ref().map(AsRef::as_ref),
+            Some("special:magic")
+        );
+    }
+
+    /// 0.57 sends `focusedmonv2>>{monitor},{addressableName}`.
+    #[test]
+    fn focusedmonv2_carries_the_addressable_identity() {
+        let Event::ActiveMonitorChangedV2(data) = parse("focusedmonv2>>eDP-1,special:magic") else {
+            panic!("expected ActiveMonitorChangedV2");
+        };
+        assert_eq!(data.monitor_name, "eDP-1");
+        assert!(data.workspace.is_special());
+        assert_eq!(
+            data.workspace.address.as_ref().map(AsRef::as_ref),
+            Some("special:magic")
+        );
+    }
+
+    /// 0.56 sends `focusedmonv2>>{monitor},{numeric id}`.
+    #[test]
+    fn focusedmonv2_accepts_the_legacy_id_shape() {
         let Event::ActiveMonitorChangedV2(data) = parse("focusedmonv2>>eDP-1,-98") else {
             panic!("expected ActiveMonitorChangedV2");
         };
         assert_eq!(data.monitor_name, "eDP-1");
-        assert_eq!(data.workspace_id, -98);
+        assert_eq!(data.workspace.id().unwrap(), -98);
+        assert!(data.workspace.is_special());
+    }
+
+    #[test]
+    fn v1_special_and_monitor_events_carry_the_identity() {
+        let Event::ChangedSpecial(data) = parse("activespecial>>special:magic,DP-1") else {
+            panic!("expected ChangedSpecial");
+        };
+        assert!(data.workspace.is_special());
+        assert_eq!(
+            data.workspace.address.as_ref().map(AsRef::as_ref),
+            Some("special:magic")
+        );
+        assert_eq!(data.monitor_name, "DP-1");
+
+        let Event::ActiveMonitorChanged(data) = parse("focusedmon>>DP-1,special:magic") else {
+            panic!("expected ActiveMonitorChanged");
+        };
+        assert!(
+            data.workspace
+                .as_ref()
+                .is_some_and(WorkspaceBasic::is_special)
+        );
+    }
+
+    #[test]
+    fn workspacev2_accepts_both_shapes() {
+        let Event::WorkspaceChanged(workspace) = parse("workspacev2>>3,3") else {
+            panic!("expected WorkspaceChanged");
+        };
+        assert_eq!(workspace.id().unwrap(), 3);
+        assert!(!workspace.is_special());
+        assert_eq!(workspace.address.as_ref().map(AsRef::as_ref), Some("3"));
+
+        let Event::WorkspaceChanged(workspace) = parse("workspacev2>>special:magic,special:magic")
+        else {
+            panic!("expected WorkspaceChanged");
+        };
+        assert!(workspace.is_special());
+        assert!(workspace.id().is_err());
+
+        let Event::WorkspaceDeleted(workspace) = parse("destroyworkspacev2>>-98,special:magic")
+        else {
+            panic!("expected WorkspaceDeleted");
+        };
+        assert_eq!(workspace.id().unwrap(), -98);
+        assert!(workspace.is_special());
+
+        let Event::WorkspaceChanged(workspace) = parse("workspacev2>>3,web") else {
+            panic!("expected WorkspaceChanged");
+        };
+        assert_eq!(workspace.id().unwrap(), 3);
+        assert_eq!(workspace.address.as_ref().map(AsRef::as_ref), Some("3"));
+        assert_eq!(workspace.name, "web");
+    }
+
+    #[test]
+    fn workspace_moved_and_rename_events_carry_the_identity() {
+        let Event::WorkspaceMoved(moved) =
+            parse("moveworkspacev2>>special:magic,special:magic,DP-1")
+        else {
+            panic!("expected WorkspaceMoved");
+        };
+        assert_eq!(moved.monitor, "DP-1");
+        assert!(moved.workspace.is_special());
+
+        let Event::WorkspaceRenamed(renamed) = parse("renameworkspace>>foo,bar") else {
+            panic!("expected WorkspaceRenamed");
+        };
+        assert_eq!(renamed.address.as_ref().map(AsRef::as_ref), Some("foo"));
+        assert_eq!(renamed.name, "bar");
+    }
+
+    #[test]
+    fn window_events_carry_the_workspace_identity() {
+        let Event::WindowOpened(opened) = parse("openwindow>>55a,special:magic,kitty,title") else {
+            panic!("expected WindowOpened");
+        };
+        assert!(opened.workspace.is_special());
+
+        let Event::WindowMoved(moved) = parse("movewindowv2>>55a,special:magic,special:magic")
+        else {
+            panic!("expected WindowMoved");
+        };
+        assert!(moved.workspace.is_special());
     }
 
     /// Upstream sends `monitorremovedv2>>{id},{name},{description}` — the same
@@ -1388,8 +1456,11 @@ mod new_events_tests {
         };
         assert_eq!(data.monitor_name, "eDP-1");
         assert_eq!(
-            data.workspace_name,
-            Some(WorkspaceType::Regular("name".to_string()))
+            data.workspace
+                .as_ref()
+                .and_then(|workspace| workspace.address.as_ref())
+                .map(AsRef::as_ref),
+            Some("name")
         );
     }
 }

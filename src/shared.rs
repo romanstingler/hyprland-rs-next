@@ -13,6 +13,11 @@ use std::{env, fmt};
 #[derive(Debug, Deserialize, Serialize, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Display)]
 pub struct Address(String);
 impl Address {
+    /// Creates an address without the `0x` normalisation used for window addresses.
+    pub(crate) fn from_raw<T: ToString>(string: T) -> Self {
+        Self(string.to_string())
+    }
+
     /// This creates a new address from a value that implements [ToString]
     pub fn new<T: ToString>(string: T) -> Self {
         let str = string.to_string();

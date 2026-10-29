@@ -619,6 +619,8 @@ pub enum DispatchType<'a> {
     Exit,
     /// This dispatcher forces the renderer to reload
     ForceRendererReload,
+    /// This dispatcher reloads the configuration (Hyprland 0.57+)
+    ReloadConfig,
     /// This dispatcher moves the current workspace to a specified monitor
     MoveCurrentWorkspaceToMonitor(MonitorIdentifier<'a>),
     /// This dispatcher moves a specified workspace to a specified monitor
@@ -975,6 +977,11 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
         WorkspaceOption(opt) => format!("workspaceopt{sep}{opt}"),
         Exit => "exit".to_string(),
         ForceRendererReload => "forcerendererreload".to_string(),
+        ReloadConfig => {
+            return Err(crate::HyprError::Unsupported(
+                "reload_config is a Hyprland 0.57+ Lua dispatcher".to_string(),
+            ));
+        }
         MoveCurrentWorkspaceToMonitor(mon) => format!("movecurrentworkspacetomonitor{sep}{mon}"),
         MoveWorkspaceToMonitor(work, mon) => format!("moveworkspacetomonitor{sep}{work} {mon}"),
         ToggleSpecialWorkspace(Some(name)) => format!("togglespecialworkspace{sep}{name}"),
@@ -1397,6 +1404,7 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
         ),
         Exit => "hl.dsp.exit()".to_string(),
         ForceRendererReload => "hl.dsp.force_renderer_reload()".to_string(),
+        ReloadConfig => "hl.dsp.reload_config()".to_string(),
         MoveCurrentWorkspaceToMonitor(monitor) => format!(
             "hl.dsp.workspace.move({{ monitor = {} }})",
             crate::lua::quote(&monitor.to_string())
@@ -1437,7 +1445,7 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
             }
         },
         LockGroups(action) => format!(
-            "hl.dsp.group.lock({{ action = {} }})",
+            "hl.dsp.group.lock({{ action = {}, all = true }})",
             crate::lua::quote(lua_lock_action(action))
         ),
         LockActiveGroup(action) => format!(

@@ -57,6 +57,28 @@ pub enum WorkspaceKind {
     Special,
 }
 
+/// Empty strings are how Hyprland 0.57 represents an absent address/type
+/// (`specialWorkspace: { address = "", type = "", name = "" }`).
+fn deserialize_workspace_address<'de, D>(deserializer: D) -> Result<Option<Address>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Address>::deserialize(deserializer)?;
+    Ok(value.filter(|value| !value.is_empty()))
+}
+
+fn deserialize_workspace_kind<'de, D>(deserializer: D) -> Result<Option<WorkspaceKind>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(match value.as_deref() {
+        Some("normal") => Some(WorkspaceKind::Normal),
+        Some("special") => Some(WorkspaceKind::Special),
+        _ => None,
+    })
+}
+
 /// The error the `id()` accessors return when the payload has no numeric id.
 fn numeric_id(id: Option<WorkspaceId>) -> crate::Result<WorkspaceId> {
     id.ok_or_else(|| {
@@ -79,18 +101,73 @@ fn is_special_workspace(id: Option<WorkspaceId>, kind: Option<WorkspaceKind>) ->
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceBasic {
     /// The stable identity (`addressableName` upstream): `"5"` or `"special:<name>"`. Absent on Hyprland ≤ v0.56.2.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_workspace_address")]
     pub address: Option<Address>,
     #[serde(default)]
     id: Option<WorkspaceId>,
     /// Whether the workspace is normal or special. Absent on Hyprland ≤ v0.56.2.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_workspace_kind")]
     pub r#type: Option<WorkspaceKind>,
     /// The display name — cosmetic, changes on rename; the stable identity is `address`.
     pub name: String,
 }
 
+fn workspace_kind_from_address(address: &str) -> WorkspaceKind {
+    if address.starts_with("special:") {
+        WorkspaceKind::Special
+    } else {
+        WorkspaceKind::Normal
+    }
+}
+
 impl WorkspaceBasic {
+    /// Build the identity from a socket-2 event.
+    ///
+    /// Hyprland ≤ v0.56.2 sends `{id},{name}`; 0.57 sends
+    /// `{addressableName},{displayName}`. A numeric first field is handled as the legacy
+    /// shape, and the addressable name is the second field in that shape.
+    pub(crate) fn from_event_fields(addressable_or_id: &str, name: &str) -> Self {
+        let (address, id, kind) = match addressable_or_id.parse::<WorkspaceId>() {
+            Ok(id) => {
+                let address = if name.starts_with("special:") {
+                    name
+                } else {
+                    addressable_or_id
+                };
+                (address, Some(id), workspace_kind_from_address(address))
+            }
+            Err(_) => (
+                addressable_or_id,
+                None,
+                workspace_kind_from_address(addressable_or_id),
+            ),
+        };
+
+        Self {
+            address: Some(Address::from_raw(address)),
+            id,
+            r#type: Some(kind),
+            name: name.to_string(),
+        }
+    }
+
+    /// Build the identity from a payload that only carries an addressable name.
+    pub(crate) fn from_event_address(addressable: &str) -> Self {
+        let id = addressable.parse::<WorkspaceId>().ok();
+        let kind = if id.is_some_and(is_special_id) {
+            WorkspaceKind::Special
+        } else {
+            workspace_kind_from_address(addressable)
+        };
+
+        Self {
+            address: Some(Address::from_raw(addressable)),
+            id,
+            r#type: Some(kind),
+            name: addressable.to_string(),
+        }
+    }
+
     /// The numeric id; errors when the workspace has none. See [`Workspace::id`].
     pub fn id(&self) -> crate::Result<WorkspaceId> {
         numeric_id(self.id)
@@ -213,12 +290,12 @@ create_data_struct!(
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
     /// The stable identity (`addressableName` upstream): `"5"` or `"special:<name>"`. Absent on Hyprland ≤ v0.56.2.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_workspace_address")]
     pub address: Option<Address>,
     #[serde(default)]
     id: Option<WorkspaceId>,
     /// Whether the workspace is normal or special. Absent on Hyprland ≤ v0.56.2.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_workspace_kind")]
     pub r#type: Option<WorkspaceKind>,
     /// The display name — cosmetic, changes on rename; the stable identity is `address`.
     pub name: String,
@@ -349,6 +426,15 @@ mod workspace_tests {
     use super::*;
 
     /// `address` and `type` always present, `id` only when numeric. Shape from `getWorkspaceData` on upstream `main`.
+    #[test]
+    fn an_empty_special_workspace_sentinel_is_absent() {
+        let basic: WorkspaceBasic =
+            serde_json::from_str(r#"{"address":"","type":"","name":""}"#).unwrap();
+        assert_eq!(basic.address, None);
+        assert_eq!(basic.r#type, None);
+        assert!(!basic.is_special());
+    }
+
     #[test]
     fn a_main_payload_with_an_id_parses() {
         let payload = r#"{
