@@ -516,7 +516,7 @@ fn lua_config_code(key: &str, value: &OptionValue) -> crate::Result<String> {
         .split([':', '.'])
         .filter(|part| !part.is_empty())
         .collect();
-    if parts.is_empty() {
+    if parts.len() < 2 {
         return Err(crate::HyprError::InvalidOptionKey(key.to_string()));
     }
 
@@ -1138,5 +1138,15 @@ mod conversion_tests {
     #[test]
     fn lua_config_rejects_an_empty_key() {
         assert!(lua_config_code("", &OptionValue::Int(1)).is_err());
+    }
+
+    #[test]
+    fn lua_config_rejects_legacy_top_level_directives() {
+        for key in ["monitor", "windowrule", "exec-once", "env", "source"] {
+            assert!(
+                lua_config_code(key, &OptionValue::String("x".to_string())).is_err(),
+                "{key}"
+            );
+        }
     }
 }

@@ -1,8 +1,8 @@
 use hyprland::dispatch::{
     BinaryState, Corner, CycleDirection, Direction, DispatchType, FloatValue, FocusMasterParam,
-    FullscreenState, FullscreenType, LockType, MasterLoopParam, MonitorIdentifier, MoveToRootParam,
-    OrientationParam, Position, SignalType, SubmapParam, SwapWithMasterParam, TagAction,
-    WindowIdentifier, WindowMove, WindowSwitchDirection, WorkspaceIdentifier,
+    FullscreenState, FullscreenType, KeyState, LockType, MasterLoopParam, MonitorIdentifier,
+    MoveToRootParam, OrientationParam, Position, SignalType, SubmapParam, SwapWithMasterParam,
+    TagAction, WindowIdentifier, WindowMove, WindowSwitchDirection, WorkspaceIdentifier,
     WorkspaceIdentifierWithSpecial, WorkspaceOptions, ZOrder, gen_lua_dispatch_expr,
     gen_lua_dispatch_str,
 };
@@ -24,6 +24,10 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         ExecRaw("echo hi"),
         Pass(WindowIdentifier::ActiveWindow),
         Global("name"),
+        Event("custom-event"),
+        ForceIdle(1.5),
+        ReleaseInputCapture,
+        NoOp,
         KillActiveWindow,
         ForceKillActiveWindow,
         CloseWindow(WindowIdentifier::Address(Address::new("55a"))),
@@ -43,12 +47,16 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         TogglePin,
         TogglePinWindow(window()),
         SendShortcut(&[Mod::SUPER, Mod::SHIFT], "A", Some(window())),
+        SendKeyState(&[Mod::SUPER], "A", KeyState::Down, None),
         Signal(SignalType::SIGTERM),
         SignalWindow(window(), SignalType::SIGKILL),
         MoveFocus(Direction::Left),
         MoveWindow(WindowMove::Direction(Direction::Up)),
         MoveWindow(WindowMove::Monitor(monitor())),
         CenterWindow,
+        WindowDrag,
+        WindowResize,
+        ResizeWindowKeepAspectRatio(true),
         ResizeActive(Position::Delta(10, -10)),
         MoveActive(Position::Exact(100, 200)),
         ResizeActive(Position::DeltaFraction(10, 20)),
@@ -57,9 +65,13 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         MoveWindowPixel(Position::Exact(1, 2), window()),
         MoveWindowPixel(Position::DeltaFraction(10, 20), window()),
         CycleWindow(CycleDirection::Next),
+        CycleWindowFiltered(CycleDirection::Next, Some(true), Some(false)),
         SwapNext(CycleDirection::Previous),
         SwapWindow(Direction::Right),
+        SwapWindowWith(window()),
         TagWindow(TagAction::Add, "foo", Some(window())),
+        ClearTags(Some(window())),
+        SetProp("opaque", "toggle", None),
         FocusWindow(window()),
         FocusMonitor(monitor()),
         ChangeSplitRatio(FloatValue::Exact(0.5)),
@@ -68,6 +80,7 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         MoveCursor(10, 20),
         RenameWorkspace(5, Some("web")),
         RenameWorkspace(5, None),
+        ChangeWorkspaceId(WorkspaceIdentifierWithSpecial::Id(3), 7),
         Exit,
         ForceRendererReload,
         MoveCurrentWorkspaceToMonitor(monitor()),
@@ -104,6 +117,7 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         Mfact(FloatValue::Relative(0.1)),
         RollNext,
         RollPrev,
+        Layout("custom"),
         ToggleGroup,
         ChangeGroupActive(WindowSwitchDirection::Forward),
         ChangeGroupActive(WindowSwitchDirection::Back),
@@ -152,6 +166,56 @@ fn generic_dispatchers() {
     assert_eq!(
         expr(DispatchType::ForceKillActiveWindow),
         "hl.dsp.window.kill()"
+    );
+}
+
+#[test]
+fn top_level_lua_dispatchers() {
+    assert_eq!(
+        expr(DispatchType::Event("custom-event")),
+        r#"hl.dsp.event("custom-event")"#
+    );
+    assert_eq!(expr(DispatchType::ForceIdle(1.5)), "hl.dsp.force_idle(1.5)");
+    assert_eq!(
+        expr(DispatchType::ReleaseInputCapture),
+        "hl.dsp.release_input_capture()"
+    );
+    assert_eq!(expr(DispatchType::NoOp), "hl.dsp.no_op()");
+    assert_eq!(
+        expr(DispatchType::Layout("custom")),
+        r#"hl.dsp.layout("custom")"#
+    );
+    assert_eq!(expr(DispatchType::WindowDrag), "hl.dsp.window.drag()");
+    assert_eq!(expr(DispatchType::WindowResize), "hl.dsp.window.resize()");
+    assert_eq!(
+        expr(DispatchType::SendKeyState(
+            &[Mod::SUPER],
+            "A",
+            KeyState::Down,
+            None
+        )),
+        r#"hl.dsp.send_key_state({ mods = "SUPER", key = "A", state = "down" })"#
+    );
+}
+
+#[test]
+fn window_tag_and_prop_dispatchers() {
+    assert_eq!(
+        expr(DispatchType::ClearTags(Some(
+            WindowIdentifier::ClassRegularExpression("kitty")
+        ))),
+        r#"hl.dsp.window.clear_tags({ window = "class:kitty" })"#
+    );
+    assert_eq!(
+        expr(DispatchType::SetProp("opaque", "toggle", None)),
+        r#"hl.dsp.window.set_prop({ prop = "opaque", value = "toggle" })"#
+    );
+    assert_eq!(
+        expr(DispatchType::ChangeWorkspaceId(
+            WorkspaceIdentifierWithSpecial::Id(3),
+            7
+        )),
+        r#"hl.dsp.workspace.change_id({ workspace = "3", id = 7 })"#
     );
 }
 
@@ -231,6 +295,28 @@ fn layout_dispatchers_go_through_layoutmsg() {
             MoveToRootParam::Unstable
         )),
         r#"hl.dsp.layout("movetoroot class:kitty unstable")"#
+    );
+}
+
+#[test]
+fn window_swap_and_filter_dispatchers() {
+    assert_eq!(
+        expr(DispatchType::ResizeWindowKeepAspectRatio(true)),
+        "hl.dsp.window.resize({ keep_aspect_ratio = true })"
+    );
+    assert_eq!(
+        expr(DispatchType::SwapWindowWith(
+            WindowIdentifier::ClassRegularExpression("kitty")
+        )),
+        r#"hl.dsp.window.swap({ target = "class:kitty" })"#
+    );
+    assert_eq!(
+        expr(DispatchType::CycleWindowFiltered(
+            CycleDirection::Next,
+            Some(true),
+            Some(false)
+        )),
+        "hl.dsp.window.cycle_next({ next = true, tiled = true, floating = false })"
     );
 }
 

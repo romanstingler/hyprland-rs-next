@@ -17,9 +17,9 @@
 use hyprland::dispatch::gen_dispatch_str;
 use hyprland::dispatch::{
     BinaryState, Corner, CycleDirection, Direction, DispatchType, FloatValue, FocusMasterParam,
-    FullscreenState, FullscreenType, LockType, MasterLoopParam, MonitorIdentifier, MoveToRootParam,
-    OrientationParam, Position, SignalType, SubmapParam, SwapWithMasterParam, TagAction,
-    WindowIdentifier, WindowMove, WindowSwitchDirection, WorkspaceIdentifier,
+    FullscreenState, FullscreenType, KeyState, LockType, MasterLoopParam, MonitorIdentifier,
+    MoveToRootParam, OrientationParam, Position, SignalType, SubmapParam, SwapWithMasterParam,
+    TagAction, WindowIdentifier, WindowMove, WindowSwitchDirection, WorkspaceIdentifier,
     WorkspaceIdentifierWithSpecial, WorkspaceOptions, ZOrder,
 };
 use hyprland::shared::{Address, CommandFlag, Mod};
@@ -265,11 +265,6 @@ fn window_state_dispatchers() {
             "fullscreenstate,1 2",
         ),
         (
-            DispatchType::ToggleFakeFullscreen,
-            "dispatch fakefullscreen",
-            "fakefullscreen",
-        ),
-        (
             DispatchType::ToggleDPMS(true, Some("HDMI-A-1")),
             "dispatch dpms on HDMI-A-1",
             "dpms,on HDMI-A-1",
@@ -288,8 +283,8 @@ fn window_state_dispatchers() {
         ),
         (
             DispatchType::ToggleOpaque,
-            "dispatch setprop opaque toggle",
-            "setprop,opaque toggle",
+            "dispatch setprop activewindow opaque toggle",
+            "setprop,activewindow opaque toggle",
         ),
         (
             DispatchType::ToggleSwallow,
@@ -718,4 +713,102 @@ fn set_cursor_is_always_json() {
     let bind_cmd = gen_dispatch_str(DispatchType::SetCursor("Adwaita", 24), false).unwrap();
     assert_eq!(bind_cmd.data, "setcursor Adwaita 24");
     assert_eq!(bind_cmd.flag, CommandFlag::JSON);
+}
+
+#[test]
+fn top_level_dispatchers() {
+    let cases = [
+        (
+            DispatchType::Event("custom-event"),
+            "dispatch event custom-event",
+            "event,custom-event",
+        ),
+        (
+            DispatchType::ForceIdle(1.5),
+            "dispatch forceidle 1.5",
+            "forceidle,1.5",
+        ),
+        (
+            DispatchType::ReleaseInputCapture,
+            "dispatch releaseinputcapture",
+            "releaseinputcapture",
+        ),
+        (
+            DispatchType::Layout("custom"),
+            "dispatch layoutmsg custom",
+            "layoutmsg,custom",
+        ),
+        (
+            DispatchType::WindowDrag,
+            "dispatch movewindow",
+            "movewindow",
+        ),
+        (
+            DispatchType::WindowResize,
+            "dispatch resizewindow",
+            "resizewindow",
+        ),
+        (
+            DispatchType::SendKeyState(&[Mod::SUPER], "A", KeyState::Down, None),
+            "dispatch sendkeystate SUPER,A,down,",
+            "sendkeystate,SUPER,A,down,",
+        ),
+        (
+            DispatchType::SetProp("opaque", "toggle", None),
+            "dispatch setprop activewindow opaque toggle",
+            "setprop,activewindow opaque toggle",
+        ),
+        (
+            DispatchType::ResizeWindowKeepAspectRatio(true),
+            "dispatch resizewindow 1",
+            "resizewindow,1",
+        ),
+        (
+            DispatchType::SwapWindowWith(WindowIdentifier::Address(Address::new("55a"))),
+            "dispatch swapwindow address:0x55a",
+            "swapwindow,address:0x55a",
+        ),
+        (
+            DispatchType::CycleWindowFiltered(CycleDirection::Next, Some(true), None),
+            "dispatch cyclenext tiled",
+            "cyclenext,tiled",
+        ),
+    ];
+
+    for (dispatcher, socket, bind) in cases {
+        gold(dispatcher, socket, bind);
+    }
+}
+
+#[test]
+fn removed_fakefullscreen_is_rejected() {
+    assert!(gen_dispatch_str(DispatchType::ToggleFakeFullscreen, true).is_err());
+}
+
+#[test]
+fn no_op_is_lua_only() {
+    assert!(gen_dispatch_str(DispatchType::NoOp, true).is_err());
+}
+
+#[test]
+fn negative_cycle_filters_are_not_representable_legacy() {
+    assert!(
+        gen_dispatch_str(
+            DispatchType::CycleWindowFiltered(CycleDirection::Next, Some(false), None),
+            true
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn lua_only_dispatchers_reject_the_legacy_grammar() {
+    assert!(gen_dispatch_str(DispatchType::ClearTags(None), true).is_err());
+    assert!(
+        gen_dispatch_str(
+            DispatchType::ChangeWorkspaceId(WorkspaceIdentifierWithSpecial::Id(3), 7),
+            true
+        )
+        .is_err()
+    );
 }

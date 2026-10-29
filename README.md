@@ -36,10 +36,12 @@ Hyprland version, so one binary keeps working on both. `Dispatch`, `Keyword`
 and `Binder` select the matching grammar automatically; the legacy path is
 unchanged.
 
-Known Lua limits: fractional `Position` values, `Custom`, `ToggleFakeFullscreen`,
-`WorkspaceOption`, and the `MultiKey`/`HasDescription` bind flags have no Lua
-equivalent and return `HyprError::Unsupported`. Bind descriptions and the
-remaining upstream bind flags are not exposed yet.
+Known Lua limits: `Custom`, `ToggleFakeFullscreen`, `WorkspaceOption`, and the
+`MultiKey`/`HasDescription` bind flags have no Lua equivalent and return
+`HyprError::Unsupported`. `DispatchType::Lua(&str)` is the escape hatch for
+dispatcher argument combinations the typed variants do not model. Config
+authoring functions (`hl.monitor`, `hl.window_rule`, `hl.env`, ...) are not
+exposed; those belong in the Lua config itself.
 
 To depend on it:
 

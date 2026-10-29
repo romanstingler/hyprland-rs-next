@@ -407,6 +407,21 @@ impl std::fmt::Display for SignalType {
     }
 }
 
+/// The state of a synthetic key event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[non_exhaustive]
+pub enum KeyState {
+    /// Key pressed down
+    #[display("down")]
+    Down,
+    /// Key released
+    #[display("up")]
+    Up,
+    /// Key repeat
+    #[display("repeat")]
+    Repeat,
+}
+
 #[derive(Debug, Clone, Copy, Display)]
 /// This enum holds the params to the [DispatchType::MoveToRoot] dispatcher
 #[non_exhaustive]
@@ -473,6 +488,14 @@ pub enum DispatchType<'a> {
     Pass(WindowIdentifier<'a>),
     /// Executes a Global Shortcut using the GlobalShortcuts portal.
     Global(&'a str),
+    /// Emits a named event
+    Event(&'a str),
+    /// Forces the idle inhibitor for the given duration
+    ForceIdle(f32),
+    /// Releases the current input capture
+    ReleaseInputCapture,
+    /// Does nothing
+    NoOp,
     /// This dispatcher closes the active window/client
     KillActiveWindow,
     /// This dispatcher kills the active window/client
@@ -522,6 +545,17 @@ pub enum DispatchType<'a> {
         /// The window identifier
         Option<WindowIdentifier<'a>>,
     ),
+    /// Sends a synthetic key state
+    SendKeyState(
+        /// The modifiers
+        &'a [crate::shared::Mod],
+        /// The key, e.g., "A"
+        &'a str,
+        /// The key state
+        KeyState,
+        /// The window identifier
+        Option<WindowIdentifier<'a>>,
+    ),
     /// This dispatcher sends a signal to the active window
     Signal(SignalType),
     /// This dispatcher sends a signal to the specified window
@@ -532,6 +566,12 @@ pub enum DispatchType<'a> {
     MoveWindow(WindowMove<'a>),
     /// This dispatcher centers the active window
     CenterWindow,
+    /// Drags the active window (mouse binds)
+    WindowDrag,
+    /// Resizes the active window interactively (mouse binds)
+    WindowResize,
+    /// Resizes interactively, forcing or blocking the aspect ratio
+    ResizeWindowKeepAspectRatio(bool),
     /// This dispatcher resizes the active window using a [Position] enum
     ResizeActive(Position),
     /// This dispatcher moves the active window using a [Position] enum
@@ -542,12 +582,20 @@ pub enum DispatchType<'a> {
     MoveWindowPixel(Position, WindowIdentifier<'a>),
     /// This dispatcher cycles windows using a specified direction
     CycleWindow(CycleDirection),
+    /// This dispatcher cycles windows with tiled/floating filters
+    CycleWindowFiltered(CycleDirection, Option<bool>, Option<bool>),
     /// This dispatcher swaps the focused window with the window on a workspace using a specified direction
     SwapNext(CycleDirection),
     /// This dispatcher swaps windows using a specified direction
     SwapWindow(Direction),
+    /// This dispatcher swaps the active window with a specific window
+    SwapWindowWith(WindowIdentifier<'a>),
     /// Apply tag to current or the first window matching
     TagWindow(TagAction, &'a str, Option<WindowIdentifier<'a>>),
+    /// Clears all tags from the specified window
+    ClearTags(Option<WindowIdentifier<'a>>),
+    /// Sets a window property
+    SetProp(&'a str, &'a str, Option<WindowIdentifier<'a>>),
     /// This dispatcher focuses a specified window
     FocusWindow(WindowIdentifier<'a>),
     /// This dispatcher focuses a specified monitor
@@ -565,6 +613,8 @@ pub enum DispatchType<'a> {
     WorkspaceOption(WorkspaceOptions),
     /// This dispatcher renames a workspace
     RenameWorkspace(WorkspaceId, Option<&'a str>),
+    /// This dispatcher changes the numeric id of a workspace
+    ChangeWorkspaceId(WorkspaceIdentifierWithSpecial<'a>, u32),
     /// This exits Hyprland **(DANGEROUS)**
     Exit,
     /// This dispatcher forces the renderer to reload
@@ -649,6 +699,8 @@ pub enum DispatchType<'a> {
     RollNext,
     /// Rotate the previous window in stack to be the master, while keeping the focus on master
     RollPrev,
+    /// Sends a raw layout message
+    Layout(&'a str),
 
     // Group Dispatchers
     /// Toggles the current active window into a group
@@ -801,6 +853,14 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
         ExecRaw(sh) => format!("execr{sep}{sh}"),
         Pass(win) => format!("pass{sep}{win}"),
         Global(name) => format!("global{sep}{name}"),
+        Event(name) => format!("event{sep}{name}"),
+        ForceIdle(duration) => format!("forceidle{sep}{duration}"),
+        ReleaseInputCapture => "releaseinputcapture".to_string(),
+        NoOp => {
+            return Err(crate::HyprError::Unsupported(
+                "no_op is only available on a Lua session".to_string(),
+            ));
+        }
         KillActiveWindow => "killactive".to_string(),
         ForceKillActiveWindow => "forcekillactive".to_string(),
         CloseWindow(win) => format!("closewindow{sep}{win}"),
@@ -817,7 +877,11 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
         SetTiled(None) => "settiled".to_string(),
         ToggleFullscreen(ftype) => format!("fullscreen{sep}{ftype}"),
         ToggleFullscreenState(int, cl) => format!("fullscreenstate{sep}{int} {cl}"),
-        ToggleFakeFullscreen => "fakefullscreen".to_string(),
+        ToggleFakeFullscreen => {
+            return Err(crate::HyprError::Unsupported(
+                "fakefullscreen was removed from Hyprland".to_string(),
+            ));
+        }
         ToggleDPMS(stat, mon) => {
             format!(
                 "dpms{sep}{} {}",
@@ -835,6 +899,14 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
                 None => format!("sendshortcut{sep}{mods_str},{key},"),
             }
         }
+        SendKeyState(mods, key, state, win_opt) => {
+            let mods_str: String = mods.iter().map(|m| m.to_string()).collect();
+            let win = win_opt
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            format!("sendkeystate{sep}{mods_str},{key},{state},{win}")
+        }
         MoveFocus(dir) => format!("movefocus{sep}{dir}",),
         MoveWindow(ident) => format!(
             "movewindow{sep}{}",
@@ -844,19 +916,55 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
             }
         ),
         CenterWindow => "centerwindow".to_string(),
+        WindowDrag => "movewindow".to_string(),
+        WindowResize => "resizewindow".to_string(),
+        ResizeWindowKeepAspectRatio(force) => {
+            format!("resizewindow{sep}{}", if *force { 1 } else { 2 })
+        }
         ResizeActive(pos) => format!("resizeactive{sep}{pos}"),
         MoveActive(pos) => format!("moveactive{sep}{pos}"),
         ResizeWindowPixel(pos, win) => format!("resizewindowpixel{sep}{pos},{win}"),
         MoveWindowPixel(pos, win) => format!("movewindowpixel{sep}{pos},{win}"),
         CycleWindow(dir) => format!("cyclenext{sep}{dir}"),
+        CycleWindowFiltered(dir, tiled, floating) => {
+            if *tiled == Some(false) || *floating == Some(false) {
+                return Err(crate::HyprError::Unsupported(
+                    "negative tiled/floating filters have no legacy cyclenext form".to_string(),
+                ));
+            }
+            let mut args = Vec::new();
+            if matches!(dir, CycleDirection::Previous) {
+                args.push("prev");
+            }
+            if *tiled == Some(true) {
+                args.push("tiled");
+            }
+            if *floating == Some(true) {
+                args.push("floating");
+            }
+            format!("cyclenext{sep}{}", args.join(" "))
+        }
         SwapNext(dir) => format!("swapnext{sep}{dir}"),
         SwapWindow(dir) => format!("swapwindow{sep}{dir}"),
+        SwapWindowWith(win) => format!("swapwindow{sep}{win}"),
         TagWindow(act, tag, Some(win)) => format!("tagwindow{sep}{act}{tag} {win}"),
         TagWindow(act, tag, None) => format!("tagwindow{sep}{act}{tag}"),
+        ClearTags(_) => {
+            return Err(crate::HyprError::Unsupported(
+                "clear_tags is only available on a Lua session".to_string(),
+            ));
+        }
+        SetProp(prop, value, win) => {
+            let win = win
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "activewindow".to_string());
+            format!("setprop{sep}{win} {prop} {value}")
+        }
         FocusWindow(win) => format!("focuswindow{sep}{win}"),
         FocusMonitor(mon) => format!("focusmonitor{sep}{mon}"),
         ChangeSplitRatio(fv) => format!("layoutmsg{sep}splitratio {fv}"),
-        ToggleOpaque => format!("setprop{sep}opaque toggle"),
+        ToggleOpaque => format!("setprop{sep}activewindow opaque toggle"),
         MoveCursorToCorner(corner) => format!("movecursortocorner{sep}{}", corner.clone() as u8),
         MoveCursor(x, y) => format!("movecursor{sep}{x} {y}"),
         WorkspaceOption(opt) => format!("workspaceopt{sep}{opt}"),
@@ -871,6 +979,11 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
                 "renameworkspace{sep}{id} {}",
                 name.unwrap_or(&id.to_string())
             )
+        }
+        ChangeWorkspaceId(_, _) => {
+            return Err(crate::HyprError::Unsupported(
+                "change_id is only available on a Lua session".to_string(),
+            ));
         }
         SwapActiveWorkspaces(mon, mon2) => format!("swapactiveworkspaces{sep}{mon} {mon2}",),
         BringActiveToTop => "bringactivetotop".to_string(),
@@ -907,6 +1020,7 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
         Mfact(fv) => format!("layoutmsg{sep}mfact {fv}"),
         RollNext => format!("layoutmsg{sep}rollnext"),
         RollPrev => format!("layoutmsg{sep}rollprev"),
+        Layout(message) => format!("layoutmsg{sep}{message}"),
         ToggleGroup => "togglegroup".to_string(),
         ChangeGroupActive(dir) => format!("changegroupactive{sep}{dir}"),
         LockGroups(how) => format!("lockgroups{sep}{how}"),
@@ -1045,6 +1159,10 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
             crate::lua::quote(&win.to_string())
         ),
         Global(name) => format!("hl.dsp.global({})", crate::lua::quote(name)),
+        Event(name) => format!("hl.dsp.event({})", crate::lua::quote(name)),
+        ForceIdle(duration) => format!("hl.dsp.force_idle({duration})"),
+        ReleaseInputCapture => "hl.dsp.release_input_capture()".to_string(),
+        NoOp => "hl.dsp.no_op()".to_string(),
         KillActiveWindow => "hl.dsp.window.close()".to_string(),
         ForceKillActiveWindow => "hl.dsp.window.kill()".to_string(),
         CloseWindow(win) => lua_window_call("close", Some(win), ""),
@@ -1119,6 +1237,27 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
             }
             format!("hl.dsp.send_shortcut({{ {args} }})")
         }
+        SendKeyState(mods, key, state, win) => {
+            let mods = mods
+                .iter()
+                .filter(|modifier| **modifier != Mod::NONE)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let mut args = format!(
+                "mods = {}, key = {}, state = {}",
+                crate::lua::quote(&mods),
+                crate::lua::quote(key),
+                crate::lua::quote(&state.to_string())
+            );
+            if let Some(win) = win {
+                args.push_str(&format!(
+                    ", window = {}",
+                    crate::lua::quote(&win.to_string())
+                ));
+            }
+            format!("hl.dsp.send_key_state({{ {args} }})")
+        }
         Signal(signal) => format!("hl.dsp.window.signal({{ signal = {} }})", *signal as i32),
         SignalWindow(win, signal) => format!(
             "hl.dsp.window.signal({{ signal = {}, window = {} }})",
@@ -1145,6 +1284,11 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
             ),
         },
         CenterWindow => "hl.dsp.window.center()".to_string(),
+        WindowDrag => "hl.dsp.window.drag()".to_string(),
+        WindowResize => "hl.dsp.window.resize()".to_string(),
+        ResizeWindowKeepAspectRatio(force) => {
+            format!("hl.dsp.window.resize({{ keep_aspect_ratio = {force} }})")
+        }
         ResizeActive(position) => lua_position_call("resize", position, None)?,
         MoveActive(position) => lua_position_call("move", position, None)?,
         ResizeWindowPixel(position, win) => lua_position_call("resize", position, Some(win))?,
@@ -1157,14 +1301,38 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
             CycleDirection::Next => "hl.dsp.window.swap({ next = true })".to_string(),
             CycleDirection::Previous => "hl.dsp.window.swap({ next = false })".to_string(),
         },
+        CycleWindowFiltered(direction, tiled, floating) => {
+            let mut args = format!("next = {}", matches!(direction, CycleDirection::Next));
+            if let Some(tiled) = tiled {
+                args.push_str(&format!(", tiled = {tiled}"));
+            }
+            if let Some(floating) = floating {
+                args.push_str(&format!(", floating = {floating}"));
+            }
+            format!("hl.dsp.window.cycle_next({{ {args} }})")
+        }
         SwapWindow(direction) => format!(
             "hl.dsp.window.swap({{ direction = {} }})",
             crate::lua::quote(lua_direction(direction))
+        ),
+        SwapWindowWith(win) => format!(
+            "hl.dsp.window.swap({{ target = {} }})",
+            crate::lua::quote(&win.to_string())
         ),
         TagWindow(action, tag, win) => lua_window_call(
             "tag",
             win.as_ref(),
             &format!("tag = {}", crate::lua::quote(&format!("{action}{tag}"))),
+        ),
+        ClearTags(win) => lua_window_call("clear_tags", win.as_ref(), ""),
+        SetProp(prop, value, win) => lua_window_call(
+            "set_prop",
+            win.as_ref(),
+            &format!(
+                "prop = {}, value = {}",
+                crate::lua::quote(prop),
+                crate::lua::quote(value)
+            ),
         ),
         FocusWindow(win) => format!(
             "hl.dsp.focus({{ window = {} }})",
@@ -1198,6 +1366,7 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
         | Mfact(_)
         | RollNext
         | RollPrev => lua_layout_expr(cmd)?,
+        Layout(message) => format!("hl.dsp.layout({})", crate::lua::quote(message)),
         ToggleOpaque => {
             "hl.dsp.window.set_prop({ prop = \"opaque\", value = \"toggle\" })".to_string()
         }
@@ -1217,6 +1386,10 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
                 .unwrap_or_default();
             format!("hl.dsp.workspace.rename({{ workspace = {id}{name} }})")
         }
+        ChangeWorkspaceId(workspace, id) => format!(
+            "hl.dsp.workspace.change_id({{ workspace = {}, id = {id} }})",
+            crate::lua::quote(&workspace.to_string())
+        ),
         Exit => "hl.dsp.exit()".to_string(),
         ForceRendererReload => "hl.dsp.force_renderer_reload()".to_string(),
         MoveCurrentWorkspaceToMonitor(monitor) => format!(
