@@ -28,6 +28,11 @@ malformed bind lines.
 **The Lua dispatch path does not work yet**, in this fork or upstream. That
 is the next piece of work.
 
+`0.5.0` is the **legacy-complete** release: it finishes and stabilises the
+`.conf` path for Hyprland 0.54–0.56.x (tested on 0.56.2), which is what
+trailing and slow-moving distros still run. It is a breaking API release —
+see [`MIGRATION.md`](./MIGRATION.md). Lua-config support follows in `0.6.0`.
+
 To depend on it:
 
 ```toml

@@ -1,5 +1,44 @@
 # Migration Guide
 
+## `0.4.x` ⟶ `0.5.0`
+
+`0.5.0` is the last release built around the **legacy (`.conf`) Hyprland config path**
+(Hyprland 0.54–0.56.x). It prepares the API for the Lua-config work that follows, so it is
+deliberately breaking. The compiler will point at most of it; the non-compiler breakage is listed
+first.
+
+1. **Match arms must be exhaustive-safe.** Every public enum is now `#[non_exhaustive]`. Add a
+   `_ => ...` arm to every `match` over a crate enum. Future variants will then be additive.
+2. **`Workspace` / `WorkspaceBasic`.** `id` is no longer a public field:
+   - `workspace.id` → `workspace.id()?` (returns `crate::Result<WorkspaceId>`).
+   - On post-0.56 payloads a *special* workspace has no numeric id; the accessor errors instead of
+     returning a plausible `0`. Use `address` / `type` for identity.
+   - New public fields: `address: Option<Address>` and `r#type: Option<WorkspaceKind>`
+     (`WorkspaceKind` is a new `#[non_exhaustive]` enum: `Normal`, `Special`).
+3. **`Flag` variant names.** `Flag::l` → `Flag::Locked`, `r` → `Release`, `e` → `Repeat`,
+   `n` → `NonConsuming`, `m` → `Mouse`, `t` → `Transparent`, `i` → `IgnoreMods`,
+   `s` → `MultiKey`, `d` → `HasDescription`, `p` → `DontInhibit`. The emitted bind letters are
+   unchanged, so generated bind lines do not move.
+4. **`HyprError`.** `InvalidHyprGradiantFormat` → `InvalidHyprGradientFormat`; new
+   `Unsupported(String)` variant. `Error::source()` now returns the wrapped `serde_json`, I/O,
+   UTF-8 (and `hyprpaper`) error instead of `None`.
+5. **`GroupToggledEventData`.** `window_addresses: Vec<Address>` → `window_address: Address`;
+   upstream sends exactly one owner address.
+6. **`Client`.** `at`/`size` are `(i32, i32)`. New fields: `pin_fullscreened`,
+   `fullscreen_handler`, `allowed_over_fullscreen`, `tearing_hint`. `over_fullscreen` is
+   deprecated (Hyprland no longer emits it).
+7. **New `Event` variants.** Ten socket-2 events were added (`Bell`, `WindowMinimized`,
+   `WindowKilled`, `Custom`, `WorkspaceIdChanged`, `SpecialRemovedV2`, `ChangedSpecialV2`,
+   `ActiveMonitorChangedV2`, `MonitorRemovedV2`, `ScreencastV2`) — handled by the `_` arm above.
+8. **`OptionValue::Bool(bool)`** and the `OptionDescriptions` / `OptionDescription` data type for
+   discovering real option names via `hyprctl -j descriptions`.
+9. **Removed:** `data::regular::Bezier` (public but unused; `Animations` holds `BezierIdent`).
+10. **`WorkspaceRuleset`** gained the remaining upstream keys; `WorkspaceType` deserialisation was
+    corrected. Both are additive to construction but change parsed values.
+11. **MSRV is now 1.88** (`chardetng` 1.0). Update your toolchain before upgrading.
+
+Lua-config dispatch is **not** part of `0.5.0`; it is the next line of work.
+
 ## `0.2.5` ⟶ `0.3.0`
 > This release is action packed so be prepared!
 
