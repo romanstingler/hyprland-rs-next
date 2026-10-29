@@ -1,6 +1,8 @@
+use crate::capabilities::Capabilities;
 use crate::error::hypr_err;
 use crate::shared::{CommandContent, get_hypr_path};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 /// This is the sync version of the Hyprland Instance.
 /// It holds the event streams connected to the sockets of one running Hyprland instance.
@@ -15,6 +17,7 @@ pub struct Instance {
     /// .socket2.sock
     #[cfg(feature = "listener")]
     event_socket_path: Box<Path>,
+    pub(crate) capabilities: Arc<OnceLock<Capabilities>>,
 }
 
 impl PartialEq<Self> for Instance {
@@ -58,6 +61,7 @@ impl Instance {
             event_socket_path: path.join(".socket2.sock").into_boxed_path(),
             #[cfg(feature = "hyprpaper")]
             hyprpaper_stream: path.join(".hyprpaper.sock").into_boxed_path(),
+            capabilities: Arc::new(OnceLock::new()),
         })
     }
 }

@@ -52,6 +52,9 @@ pub mod error;
 /// Encoding helpers used internally by the crate
 mod encoding;
 
+/// Runtime capabilities of the connected compositor.
+pub mod capabilities;
+
 /// Used to generate the Instances to interface with Hyprland
 pub mod instance;
 
