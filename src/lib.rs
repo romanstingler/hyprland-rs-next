@@ -52,6 +52,8 @@ pub mod error;
 /// Encoding helpers used internally by the crate
 mod encoding;
 
+mod lua;
+
 /// Runtime capabilities of the connected compositor.
 pub mod capabilities;
 

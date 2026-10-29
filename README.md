@@ -25,13 +25,21 @@ swapped; `changefloatingmode` reported the inverted value;
 `Screencast::monitor` was permanently false; and three dispatchers produced
 malformed bind lines.
 
-**The Lua dispatch path does not work yet**, in this fork or upstream. That
-is the next piece of work.
-
 `0.5.0` is the **legacy-complete** release: it finishes and stabilises the
 `.conf` path for Hyprland 0.54–0.56.x (tested on 0.56.2), which is what
 trailing and slow-moving distros still run. It is a breaking API release —
-see [`MIGRATION.md`](./MIGRATION.md). Lua-config support follows in `0.6.0`.
+see [`MIGRATION.md`](./MIGRATION.md).
+
+The `0.6.0` line adds **Lua-config support** on 0.56.x. The config provider is
+detected at runtime from `hyprctl status` (`lua` or `hyprlang`), not from the
+Hyprland version, so one binary keeps working on both. `Dispatch`, `Keyword`
+and `Binder` select the matching grammar automatically; the legacy path is
+unchanged.
+
+Known Lua limits: fractional `Position` values, `Custom`, `ToggleFakeFullscreen`,
+`WorkspaceOption`, and the `MultiKey`/`HasDescription` bind flags have no Lua
+equivalent and return `HyprError::Unsupported`. Bind descriptions and the
+remaining upstream bind flags are not exposed yet.
 
 To depend on it:
 

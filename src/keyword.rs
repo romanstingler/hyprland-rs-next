@@ -489,6 +489,35 @@ pub struct Keyword {
     pub set: bool,
 }
 
+fn lua_option_literal(value: &OptionValue) -> String {
+    match value {
+        OptionValue::Int(int) => int.to_string(),
+        OptionValue::Float(float) => float.to_string(),
+        OptionValue::Bool(boolean) => boolean.to_string(),
+        OptionValue::String(string) => crate::lua::quote(string),
+        OptionValue::Custom(custom) => crate::lua::quote(&custom.to_string()),
+        OptionValue::Vec2([x, y]) => format!("{{ {x}, {y} }}"),
+        OptionValue::Unknown(_) => "nil".to_string(),
+    }
+}
+
+fn lua_config_code(key: &str, value: &OptionValue) -> crate::Result<String> {
+    let parts: Vec<_> = key
+        .split([':', '.'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    if parts.is_empty() {
+        return Err(crate::HyprError::InvalidOptionKey(key.to_string()));
+    }
+
+    let mut table = lua_option_literal(value);
+    for part in parts.iter().rev() {
+        table = format!("{{ {} = {} }}", crate::lua::table_key(part), table);
+    }
+
+    Ok(format!("return hl.config({table})"))
+}
+
 impl Keyword {
     /// This function sets a keyword's value
     pub fn set<Str: ToString, Opt: Into<OptionValue>>(key: Str, value: Opt) -> crate::Result<()> {
@@ -501,21 +530,17 @@ impl Keyword {
         key: Str,
         value: Opt,
     ) -> crate::Result<()> {
-        let value = value.into();
-
-        let value = match value {
-            OptionValue::Unknown(_) => {
-                return Err(crate::HyprError::InvalidOptionValue);
-            }
-            x => x,
+        let key = key.to_string();
+        let value = match value.into() {
+            OptionValue::Unknown(_) => return Err(crate::HyprError::InvalidOptionValue),
+            value => value,
         };
 
-        instance.write_to_socket(command!(
-            Empty,
-            "keyword {} {}",
-            key.to_string(),
-            value.to_string()
-        ))?;
+        if instance.uses_lua_config() {
+            instance.write_to_socket(command!(Empty, "eval {}", lua_config_code(&key, &value)?))?;
+        } else {
+            instance.write_to_socket(command!(Empty, "keyword {} {}", key, value.to_string()))?;
+        }
         Ok(())
     }
 
@@ -535,14 +560,19 @@ impl Keyword {
         key: Str,
         value: Opt,
     ) -> crate::Result<()> {
-        instance
-            .write_to_socket_async(command!(
-                Empty,
-                "keyword {} {}",
-                key.to_string(),
-                value.into().to_string()
-            ))
-            .await?;
+        let key = key.to_string();
+        let value = match value.into() {
+            OptionValue::Unknown(_) => return Err(crate::HyprError::InvalidOptionValue),
+            value => value,
+        };
+
+        let request = if instance.uses_lua_config_async().await {
+            command!(Empty, "eval {}", lua_config_code(&key, &value)?)
+        } else {
+            command!(Empty, "keyword {} {}", key, value.to_string())
+        };
+
+        instance.write_to_socket_async(request).await?;
         Ok(())
     }
 
@@ -1036,5 +1066,47 @@ mod conversion_tests {
             matches!(v, OptionValue::Custom(Custom::HyprGradient(_))),
             "got {v:?}"
         );
+    }
+
+    #[test]
+    fn lua_config_nests_dotted_keys() {
+        assert_eq!(
+            lua_config_code("general:border_size", &OptionValue::Int(2)).unwrap(),
+            r#"return hl.config({ ["general"] = { ["border_size"] = 2 } })"#
+        );
+        assert_eq!(
+            lua_config_code("general.gaps_in", &OptionValue::Int(5)).unwrap(),
+            r#"return hl.config({ ["general"] = { ["gaps_in"] = 5 } })"#
+        );
+    }
+
+    #[test]
+    fn lua_config_typed_values() {
+        assert_eq!(
+            lua_config_code("binds:workspace_back_and_forth", &OptionValue::Bool(true)).unwrap(),
+            r#"return hl.config({ ["binds"] = { ["workspace_back_and_forth"] = true } })"#
+        );
+        assert_eq!(
+            lua_config_code("general:gaps_in", &OptionValue::Vec2([3, 4])).unwrap(),
+            r#"return hl.config({ ["general"] = { ["gaps_in"] = { 3, 4 } } })"#
+        );
+        assert_eq!(
+            lua_config_code("general:col.active_border", &"rgba(ff0000ff)".into()).unwrap(),
+            r#"return hl.config({ ["general"] = { ["col"] = { ["active_border"] = "rgba(ff0000ff)" } } })"#
+        );
+    }
+
+    #[test]
+    fn lua_config_escapes_string_values() {
+        let value = OptionValue::String("a\"b\n".to_string());
+        assert_eq!(
+            lua_config_code("general:name", &value).unwrap(),
+            "return hl.config({ [\"general\"] = { [\"name\"] = \"a\\\"b\\n\" } })"
+        );
+    }
+
+    #[test]
+    fn lua_config_rejects_an_empty_key() {
+        assert!(lua_config_code("", &OptionValue::Int(1)).is_err());
     }
 }

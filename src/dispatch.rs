@@ -455,6 +455,8 @@ pub enum DispatchType<'a> {
         /// Args
         &'a str,
     ),
+    /// A raw Lua dispatcher expression, for Lua sessions only.
+    Lua(&'a str),
     /// This dispatcher changes the current cursor
     SetCursor(
         /// The cursor theme
@@ -790,6 +792,11 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
     let sep = if dispatch { " " } else { "," };
     let string_to_pass = match &cmd {
         Custom(name, args) => format!("{name}{sep}{args}"),
+        Lua(_) => {
+            return Err(crate::HyprError::Unsupported(
+                "raw Lua dispatcher on a legacy session".to_string(),
+            ));
+        }
         Exec(sh) => format!("exec{sep}{sh}"),
         ExecRaw(sh) => format!("execr{sep}{sh}"),
         Pass(win) => format!("pass{sep}{win}"),
@@ -921,6 +928,386 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
     }
 }
 
+fn lua_direction(dir: &Direction) -> &'static str {
+    match dir {
+        Direction::Up => "up",
+        Direction::Down => "down",
+        Direction::Right => "right",
+        Direction::Left => "left",
+    }
+}
+
+fn lua_lock_action(action: &LockType) -> &'static str {
+    match action {
+        LockType::Lock => "enable",
+        LockType::Unlock => "disable",
+        LockType::ToggleLock => "toggle",
+    }
+}
+
+fn lua_binary_state(state: &BinaryState) -> &'static str {
+    match state {
+        BinaryState::On => "on",
+        BinaryState::Off => "off",
+        BinaryState::Toggle => "toggle",
+    }
+}
+
+fn lua_window_call(function: &str, window: Option<&WindowIdentifier<'_>>, args: &str) -> String {
+    let mut fields = args.to_string();
+    if let Some(window) = window {
+        if !fields.is_empty() {
+            fields.push_str(", ");
+        }
+        fields.push_str(&format!(
+            "window = {}",
+            crate::lua::quote(&window.to_string())
+        ));
+    }
+
+    if fields.is_empty() {
+        format!("hl.dsp.window.{function}()")
+    } else {
+        format!("hl.dsp.window.{function}({{ {fields} }})")
+    }
+}
+
+fn lua_position_call(
+    function: &str,
+    position: &Position,
+    window: Option<&WindowIdentifier<'_>>,
+) -> crate::Result<String> {
+    let (x, y, relative) = match position {
+        Position::Delta(x, y) => (*x as i64, *y as i64, true),
+        Position::Exact(x, y) => (*x as i64, *y as i64, false),
+        _ => {
+            return Err(crate::HyprError::Unsupported(
+                "fractional window positions on a Lua session".to_string(),
+            ));
+        }
+    };
+
+    let mut args = format!("x = {x}, y = {y}, relative = {relative}");
+    if let Some(window) = window {
+        args.push_str(&format!(
+            ", window = {}",
+            crate::lua::quote(&window.to_string())
+        ));
+    }
+
+    Ok(format!("hl.dsp.window.{function}({{ {args} }})"))
+}
+
+fn lua_layout_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
+    let legacy = gen_dispatch_str(cmd.clone(), true)?;
+    let message = legacy
+        .data
+        .strip_prefix("dispatch layoutmsg ")
+        .ok_or_else(|| {
+            crate::HyprError::Internal(
+                "layout dispatcher did not render as a layout message".to_string(),
+            )
+        })?;
+    Ok(format!("hl.dsp.layout({})", crate::lua::quote(message)))
+}
+
+/// Render a dispatcher as a Lua expression.
+///
+/// The result is the dispatcher object passed to `hl.dispatch`, e.g.
+/// `hl.dsp.window.close()`. `SetCursor` is an IPC command rather than a dispatcher and is
+/// rejected here; use [`gen_lua_dispatch_str`] for the socket form.
+pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
+    use DispatchType::*;
+
+    let expr = match cmd {
+        Lua(raw) => raw.to_string(),
+        Custom(name, _) => {
+            return Err(crate::HyprError::Unsupported(format!(
+                "legacy custom dispatcher `{name}` on a Lua session; use DispatchType::Lua"
+            )));
+        }
+        SetCursor(_, _) => {
+            return Err(crate::HyprError::Unsupported(
+                "setcursor is an IPC command, not a Lua dispatcher".to_string(),
+            ));
+        }
+        Exec(sh) => format!("hl.dsp.exec_cmd({})", crate::lua::quote(sh)),
+        ExecRaw(sh) => format!("hl.dsp.exec_raw({})", crate::lua::quote(sh)),
+        Pass(win) => format!(
+            "hl.dsp.pass({{ window = {} }})",
+            crate::lua::quote(&win.to_string())
+        ),
+        Global(name) => format!("hl.dsp.global({})", crate::lua::quote(name)),
+        KillActiveWindow => "hl.dsp.window.close()".to_string(),
+        ForceKillActiveWindow => "hl.dsp.window.kill()".to_string(),
+        CloseWindow(win) => lua_window_call("close", Some(win), ""),
+        Workspace(workspace) => format!(
+            "hl.dsp.focus({{ workspace = {} }})",
+            crate::lua::quote(&workspace.to_string())
+        ),
+        MoveToWorkspace(workspace, win) => lua_window_call(
+            "move",
+            win.as_ref(),
+            &format!(
+                "workspace = {}, follow = true",
+                crate::lua::quote(&workspace.to_string())
+            ),
+        ),
+        MoveToWorkspaceSilent(workspace, win) => lua_window_call(
+            "move",
+            win.as_ref(),
+            &format!(
+                "workspace = {}, follow = false",
+                crate::lua::quote(&workspace.to_string())
+            ),
+        ),
+        ToggleFloating(win) => lua_window_call("float", win.as_ref(), "action = \"toggle\""),
+        SetFloating(win) => lua_window_call("float", win.as_ref(), "action = \"enable\""),
+        SetTiled(win) => lua_window_call("float", win.as_ref(), "action = \"disable\""),
+        ToggleFullscreen(mode) => match mode {
+            FullscreenType::Real => {
+                "hl.dsp.window.fullscreen({ mode = \"fullscreen\", action = \"set\" })".to_string()
+            }
+            FullscreenType::Maximize => {
+                "hl.dsp.window.fullscreen({ mode = \"maximized\", action = \"set\" })".to_string()
+            }
+            FullscreenType::NoParam => "hl.dsp.window.fullscreen()".to_string(),
+        },
+        ToggleFullscreenState(internal, client) => format!(
+            "hl.dsp.window.fullscreen_state({{ internal = {}, client = {} }})",
+            *internal as i8, *client as i8
+        ),
+        ToggleFakeFullscreen => {
+            return Err(crate::HyprError::Unsupported(
+                "fakefullscreen has no Lua dispatcher".to_string(),
+            ));
+        }
+        ToggleDPMS(on, monitor) => {
+            let action = if *on { "enable" } else { "disable" };
+            let monitor = monitor
+                .map(|monitor| format!(", monitor = {}", crate::lua::quote(monitor)))
+                .unwrap_or_default();
+            format!("hl.dsp.dpms({{ action = \"{action}\"{monitor} }})")
+        }
+        TogglePseudo => "hl.dsp.window.pseudo()".to_string(),
+        TogglePin => "hl.dsp.window.pin()".to_string(),
+        TogglePinWindow(win) => lua_window_call("pin", Some(win), ""),
+        SendShortcut(mods, key, win) => {
+            let mods = mods
+                .iter()
+                .filter(|modifier| **modifier != Mod::NONE)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let mut args = format!(
+                "mods = {}, key = {}",
+                crate::lua::quote(&mods),
+                crate::lua::quote(key)
+            );
+            if let Some(win) = win {
+                args.push_str(&format!(
+                    ", window = {}",
+                    crate::lua::quote(&win.to_string())
+                ));
+            }
+            format!("hl.dsp.send_shortcut({{ {args} }})")
+        }
+        Signal(signal) => format!("hl.dsp.window.signal({{ signal = {} }})", *signal as i32),
+        SignalWindow(win, signal) => format!(
+            "hl.dsp.window.signal({{ signal = {}, window = {} }})",
+            *signal as i32,
+            crate::lua::quote(&win.to_string())
+        ),
+        MoveFocus(direction) => format!(
+            "hl.dsp.focus({{ direction = {} }})",
+            crate::lua::quote(lua_direction(direction))
+        ),
+        MoveWindow(movement) => match movement {
+            WindowMove::Direction(direction) => lua_window_call(
+                "move",
+                None,
+                &format!(
+                    "direction = {}",
+                    crate::lua::quote(lua_direction(direction))
+                ),
+            ),
+            WindowMove::Monitor(monitor) => lua_window_call(
+                "move",
+                None,
+                &format!("monitor = {}", crate::lua::quote(&monitor.to_string())),
+            ),
+        },
+        CenterWindow => "hl.dsp.window.center()".to_string(),
+        ResizeActive(position) => lua_position_call("resize", position, None)?,
+        MoveActive(position) => lua_position_call("move", position, None)?,
+        ResizeWindowPixel(position, win) => lua_position_call("resize", position, Some(win))?,
+        MoveWindowPixel(position, win) => lua_position_call("move", position, Some(win))?,
+        CycleWindow(direction) => match direction {
+            CycleDirection::Next => "hl.dsp.window.cycle_next({ next = true })".to_string(),
+            CycleDirection::Previous => "hl.dsp.window.cycle_next({ next = false })".to_string(),
+        },
+        SwapNext(direction) => match direction {
+            CycleDirection::Next => "hl.dsp.window.swap({ next = true })".to_string(),
+            CycleDirection::Previous => "hl.dsp.window.swap({ next = false })".to_string(),
+        },
+        SwapWindow(direction) => format!(
+            "hl.dsp.window.swap({{ direction = {} }})",
+            crate::lua::quote(lua_direction(direction))
+        ),
+        TagWindow(action, tag, win) => lua_window_call(
+            "tag",
+            win.as_ref(),
+            &format!("tag = {}", crate::lua::quote(&format!("{action}{tag}"))),
+        ),
+        FocusWindow(win) => format!(
+            "hl.dsp.focus({{ window = {} }})",
+            crate::lua::quote(&win.to_string())
+        ),
+        FocusMonitor(monitor) => format!(
+            "hl.dsp.focus({{ monitor = {} }})",
+            crate::lua::quote(&monitor.to_string())
+        ),
+        ChangeSplitRatio(_)
+        | ToggleSplit
+        | SwapSplit
+        | PreSelect(_)
+        | MoveToRoot(_, _)
+        | SwapWithMaster(_)
+        | FocusMaster(_)
+        | CycleNextMaster(_)
+        | CyclePrevMaster(_)
+        | SwapNextMaster(_)
+        | SwapPrevMaster(_)
+        | AddMaster
+        | RemoveMaster
+        | OrientationLeft
+        | OrientationRight
+        | OrientationTop
+        | OrientationBottom
+        | OrientationCenter
+        | OrientationNext
+        | OrientationPrev
+        | OrientationCycle(_)
+        | Mfact(_)
+        | RollNext
+        | RollPrev => lua_layout_expr(cmd)?,
+        ToggleOpaque => {
+            "hl.dsp.window.set_prop({ prop = \"opaque\", value = \"toggle\" })".to_string()
+        }
+        MoveCursorToCorner(corner) => format!(
+            "hl.dsp.cursor.move_to_corner({{ corner = {} }})",
+            corner.clone() as u8
+        ),
+        MoveCursor(x, y) => format!("hl.dsp.cursor.move({{ x = {x}, y = {y} }})"),
+        WorkspaceOption(_) => {
+            return Err(crate::HyprError::Unsupported(
+                "workspaceopt is deprecated and has no Lua equivalent".to_string(),
+            ));
+        }
+        RenameWorkspace(id, name) => {
+            let name = name
+                .map(|name| format!(", name = {}", crate::lua::quote(name)))
+                .unwrap_or_default();
+            format!("hl.dsp.workspace.rename({{ workspace = {id}{name} }})")
+        }
+        Exit => "hl.dsp.exit()".to_string(),
+        ForceRendererReload => "hl.dsp.force_renderer_reload()".to_string(),
+        MoveCurrentWorkspaceToMonitor(monitor) => format!(
+            "hl.dsp.workspace.move({{ monitor = {} }})",
+            crate::lua::quote(&monitor.to_string())
+        ),
+        MoveWorkspaceToMonitor(workspace, monitor) => format!(
+            "hl.dsp.workspace.move({{ workspace = {}, monitor = {} }})",
+            crate::lua::quote(&workspace.to_string()),
+            crate::lua::quote(&monitor.to_string())
+        ),
+        SwapActiveWorkspaces(first, second) => format!(
+            "hl.dsp.workspace.swap_monitors({{ monitor1 = {}, monitor2 = {} }})",
+            crate::lua::quote(&first.to_string()),
+            crate::lua::quote(&second.to_string())
+        ),
+        BringActiveToTop => "hl.dsp.window.bring_to_top()".to_string(),
+        AlterZOrder(order, win) => lua_window_call(
+            "alter_zorder",
+            win.as_ref(),
+            &format!("mode = {}", crate::lua::quote(&order.to_string())),
+        ),
+        ToggleSpecialWorkspace(name) => match name {
+            Some(name) => format!(
+                "hl.dsp.workspace.toggle_special({})",
+                crate::lua::quote(name)
+            ),
+            None => "hl.dsp.workspace.toggle_special()".to_string(),
+        },
+        FocusUrgentOrLast => "hl.dsp.focus({ urgent_or_last = true })".to_string(),
+        FocusCurrentOrLast => "hl.dsp.focus({ last = true })".to_string(),
+        ToggleSwallow => "hl.dsp.window.toggle_swallow()".to_string(),
+        Submap(param) => format!("hl.dsp.submap({})", crate::lua::quote(&param.to_string())),
+        ToggleGroup => "hl.dsp.group.toggle()".to_string(),
+        ChangeGroupActive(direction) => match direction {
+            WindowSwitchDirection::Forward => "hl.dsp.group.next()".to_string(),
+            WindowSwitchDirection::Back => "hl.dsp.group.prev()".to_string(),
+            WindowSwitchDirection::Index(index) => {
+                format!("hl.dsp.group.active({{ index = {index} }})")
+            }
+        },
+        LockGroups(action) => format!(
+            "hl.dsp.group.lock({{ action = {} }})",
+            crate::lua::quote(lua_lock_action(action))
+        ),
+        LockActiveGroup(action) => format!(
+            "hl.dsp.group.lock_active({{ action = {} }})",
+            crate::lua::quote(lua_lock_action(action))
+        ),
+        MoveIntoGroup(direction) => lua_window_call(
+            "move",
+            None,
+            &format!(
+                "into_group = {}",
+                crate::lua::quote(lua_direction(direction))
+            ),
+        ),
+        MoveWindowOrGroup(direction) => lua_window_call(
+            "move",
+            None,
+            &format!(
+                "direction = {}, group_aware = true",
+                crate::lua::quote(lua_direction(direction))
+            ),
+        ),
+        MoveOutOfGroup => lua_window_call("move", None, "out_of_group = true"),
+        MoveGroupWindow(direction) => match direction {
+            WindowSwitchDirection::Forward => {
+                "hl.dsp.group.move_window({ forward = true })".to_string()
+            }
+            WindowSwitchDirection::Back => {
+                "hl.dsp.group.move_window({ forward = false })".to_string()
+            }
+            _ => {
+                return Err(crate::HyprError::Unsupported(
+                    "group move_window does not accept an index on a Lua session".to_string(),
+                ));
+            }
+        },
+        DenyWindowFromGroup(state) => format!(
+            "hl.dsp.window.deny_from_group({{ action = {} }})",
+            crate::lua::quote(lua_binary_state(state))
+        ),
+        SetIgnoreGroupLock(_) => "hl.dsp.no_op()".to_string(),
+    };
+
+    Ok(expr)
+}
+
+/// Render the socket command for a dispatcher on a Lua session.
+pub fn gen_lua_dispatch_str(cmd: DispatchType<'_>) -> crate::Result<CommandContent> {
+    if let DispatchType::SetCursor(theme, size) = cmd {
+        return Ok(command!(JSON, "setcursor {theme} {size}"));
+    }
+
+    Ok(command!(JSON, "dispatch {}", gen_lua_dispatch_expr(&cmd)?))
+}
+
 /// The struct that provides all dispatching methods
 pub struct Dispatch;
 
@@ -954,7 +1341,12 @@ impl Dispatch {
         instance: &crate::instance::Instance,
         dispatch_type: DispatchType,
     ) -> crate::Result<()> {
-        let output = instance.write_to_socket(gen_dispatch_str(dispatch_type, true)?);
+        let command = if instance.uses_lua_config() {
+            gen_lua_dispatch_str(dispatch_type)?
+        } else {
+            gen_dispatch_str(dispatch_type, true)?
+        };
+        let output = instance.write_to_socket(command);
         match output {
             Ok(msg) => match msg.as_str() {
                 "ok" => Ok(()),
@@ -998,9 +1390,12 @@ impl Dispatch {
         instance: &crate::instance::Instance,
         dispatch_type: DispatchType<'_>,
     ) -> crate::Result<()> {
-        let output = instance
-            .write_to_socket_async(gen_dispatch_str(dispatch_type, true)?)
-            .await;
+        let command = if instance.uses_lua_config_async().await {
+            gen_lua_dispatch_str(dispatch_type)?
+        } else {
+            gen_dispatch_str(dispatch_type, true)?
+        };
+        let output = instance.write_to_socket_async(command).await;
         match output {
             Ok(msg) => match msg.as_str() {
                 "ok" => Ok(()),

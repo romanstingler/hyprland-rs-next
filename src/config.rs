@@ -1,7 +1,7 @@
 //! # Hyprland Configuration in Rust
 //!
 
-use crate::dispatch::{DispatchType, gen_dispatch_str};
+use crate::dispatch::{DispatchType, gen_dispatch_str, gen_lua_dispatch_expr};
 use crate::keyword::Keyword;
 
 /// Module providing stuff for adding an removing keybinds
@@ -9,6 +9,17 @@ pub mod binds {
     use super::*;
     use crate::default_instance;
     use crate::instance::Instance;
+
+    fn join_with<T: std::fmt::Display>(items: &[T], separator: &str) -> String {
+        let mut out = String::new();
+        for (index, item) in items.iter().enumerate() {
+            if index > 0 {
+                out.push_str(separator);
+            }
+            out.push_str(&item.to_string());
+        }
+        out
+    }
 
     pub(crate) trait Join {
         fn join(&self) -> String;
@@ -99,6 +110,24 @@ pub mod binds {
         /// Bypasses the app's requests to inhibit keybinds.
         #[display("p")]
         DontInhibit,
+        /// Consumes the key event even if the dispatcher does not.
+        #[display("a")]
+        AutoConsuming,
+        /// Triggers on long press.
+        #[display("o")]
+        LongPress,
+        /// Triggers on click.
+        #[display("c")]
+        Click,
+        /// Triggers on drag.
+        #[display("g")]
+        Drag,
+        /// Works in any submap.
+        #[display("u")]
+        SubmapUniversal,
+        /// Allows the focused window to capture the input.
+        #[display("x")]
+        AllowInputCapture,
     }
 
     /// A struct used for indentifying bindings
@@ -146,6 +175,91 @@ pub mod binds {
             ))
         }
 
+        fn lua_key(mods: &[Mod], key: &Key<'_>) -> String {
+            let (mods, key) = match key {
+                Key::Mod(mods, key) => (*mods, *key),
+                Key::Key(key) => (mods, *key),
+            };
+
+            let mods: Vec<_> = mods
+                .iter()
+                .filter(|modifier| **modifier != Mod::NONE)
+                .map(ToString::to_string)
+                .collect();
+
+            if mods.is_empty() {
+                key.to_string()
+            } else {
+                format!("{} + {key}", join_with(&mods, " + "))
+            }
+        }
+
+        fn lua_flags(flags: &[Flag]) -> crate::Result<String> {
+            let mut options = Vec::new();
+            for flag in flags {
+                match flag {
+                    Flag::Locked => options.push("locked = true"),
+                    Flag::Release => options.push("release = true"),
+                    Flag::Repeat => options.push("repeating = true"),
+                    Flag::NonConsuming => options.push("non_consuming = true"),
+                    Flag::Mouse => options.push("mouse = true"),
+                    Flag::Transparent => options.push("transparent = true"),
+                    Flag::IgnoreMods => options.push("ignore_mods = true"),
+                    Flag::DontInhibit => options.push("dont_inhibit = true"),
+                    Flag::AutoConsuming => options.push("auto_consuming = true"),
+                    Flag::LongPress => options.push("long_press = true"),
+                    Flag::Click => options.push("click = true"),
+                    Flag::Drag => options.push("drag = true"),
+                    Flag::SubmapUniversal => options.push("submap_universal = true"),
+                    Flag::AllowInputCapture => options.push("allow_input_capture = true"),
+                    Flag::MultiKey => {
+                        return Err(crate::HyprError::Unsupported(
+                            "multi-key binds have no Lua bind option".to_string(),
+                        ));
+                    }
+                    Flag::HasDescription => {
+                        return Err(crate::HyprError::Unsupported(
+                            "bind descriptions are not carried by this crate".to_string(),
+                        ));
+                    }
+                }
+            }
+
+            if options.is_empty() {
+                Ok(String::new())
+            } else {
+                Ok(format!(", {{ {} }}", join_with(&options, ", ")))
+            }
+        }
+
+        /// Render a binding as a Lua `hl.bind` expression.
+        pub fn gen_lua_bind_str(binding: Binding<'_>) -> crate::Result<String> {
+            Self::gen_lua_str(binding)
+        }
+
+        /// Render a binding as a Lua `hl.unbind` expression.
+        #[must_use]
+        pub fn gen_lua_unbind_str(binding: PartialBind<'_>) -> String {
+            Self::gen_lua_unbind(binding)
+        }
+
+        pub(crate) fn gen_lua_str(binding: Binding<'_>) -> crate::Result<String> {
+            let key = Self::lua_key(binding.mods, &binding.key);
+            let flags = Self::lua_flags(binding.flags)?;
+            Ok(format!(
+                "hl.bind({}, {}{flags})",
+                crate::lua::quote(&key),
+                gen_lua_dispatch_expr(&binding.dispatcher)?
+            ))
+        }
+
+        pub(crate) fn gen_lua_unbind(binding: PartialBind<'_>) -> String {
+            format!(
+                "hl.unbind({})",
+                crate::lua::quote(&Self::lua_key(binding.mods, &binding.key))
+            )
+        }
+
         /// Binds a keybinding
         pub fn bind(binding: Binding) -> crate::Result<()> {
             Self::instance_bind(default_instance()?, binding)
@@ -158,6 +272,15 @@ pub mod binds {
 
         /// Unbinds a keybinding
         pub fn instance_unbind(instance: &Instance, binding: PartialBind) -> crate::Result<()> {
+            if instance.uses_lua_config() {
+                instance.write_to_socket(crate::command!(
+                    Empty,
+                    "eval return {}",
+                    Self::gen_lua_unbind(binding)
+                ))?;
+                return Ok(());
+            }
+
             Keyword::instance_set(instance, "unbind", Self::gen_str_partial(binding))
         }
 
@@ -173,11 +296,31 @@ pub mod binds {
             instance: &Instance,
             binding: PartialBind<'_>,
         ) -> crate::Result<()> {
+            if instance.uses_lua_config_async().await {
+                instance
+                    .write_to_socket_async(crate::command!(
+                        Empty,
+                        "eval return {}",
+                        Self::gen_lua_unbind(binding)
+                    ))
+                    .await?;
+                return Ok(());
+            }
+
             Keyword::instance_set_async(instance, "unbind", Self::gen_str_partial(binding)).await
         }
 
         /// Binds a keybinding
         pub fn instance_bind(instance: &Instance, binding: Binding) -> crate::Result<()> {
+            if instance.uses_lua_config() {
+                instance.write_to_socket(crate::command!(
+                    Empty,
+                    "eval return {}",
+                    Self::gen_lua_str(binding)?
+                ))?;
+                return Ok(());
+            }
+
             Keyword::instance_set(
                 instance,
                 format!("bind{}", (&binding.flags).join()),
@@ -197,6 +340,17 @@ pub mod binds {
             instance: &Instance,
             binding: Binding<'_>,
         ) -> crate::Result<()> {
+            if instance.uses_lua_config_async().await {
+                instance
+                    .write_to_socket_async(crate::command!(
+                        Empty,
+                        "eval return {}",
+                        Self::gen_lua_str(binding)?
+                    ))
+                    .await?;
+                return Ok(());
+            }
+
             Keyword::instance_set_async(
                 instance,
                 format!("bind{}", (&binding.flags).join()),
