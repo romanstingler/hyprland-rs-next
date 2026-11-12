@@ -504,6 +504,8 @@ pub enum DispatchType<'a> {
     CloseWindow(WindowIdentifier<'a>),
     /// This dispatcher changes the current workspace
     Workspace(WorkspaceIdentifierWithSpecial<'a>),
+    /// This dispatcher shows a workspace without focusing it (Hyprland 0.58+)
+    ShowWorkspace(WorkspaceIdentifierWithSpecial<'a>),
     /// This dispatcher moves a window (focused if not specified) to a workspace
     MoveToWorkspace(
         WorkspaceIdentifierWithSpecial<'a>,
@@ -867,6 +869,11 @@ pub fn gen_dispatch_str(cmd: DispatchType, dispatch: bool) -> crate::Result<Comm
         ForceKillActiveWindow => "forcekillactive".to_string(),
         CloseWindow(win) => format!("closewindow{sep}{win}"),
         Workspace(work) => format!("workspace{sep}{work}"),
+        ShowWorkspace(_) => {
+            return Err(crate::HyprError::Unsupported(
+                "workspace show is a Hyprland 0.58+ Lua dispatcher".to_string(),
+            ));
+        }
         MoveToWorkspace(work, Some(win)) => format!("movetoworkspace{sep}{work},{win}"),
         MoveToWorkspace(work, None) => format!("movetoworkspace{sep}{work}"),
         MoveToWorkspaceSilent(work, Some(win)) => format!("movetoworkspacesilent{sep}{work},{win}"),
@@ -1180,6 +1187,10 @@ pub fn gen_lua_dispatch_expr(cmd: &DispatchType<'_>) -> crate::Result<String> {
         CloseWindow(win) => lua_window_call("close", Some(win), ""),
         Workspace(workspace) => format!(
             "hl.dsp.focus({{ workspace = {} }})",
+            crate::lua::quote(&workspace.to_string())
+        ),
+        ShowWorkspace(workspace) => format!(
+            "hl.dsp.workspace.show({{ workspace = {} }})",
             crate::lua::quote(&workspace.to_string())
         ),
         MoveToWorkspace(workspace, win) => lua_window_call(

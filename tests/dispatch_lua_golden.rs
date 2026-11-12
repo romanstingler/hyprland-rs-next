@@ -32,6 +32,7 @@ fn all_supported() -> Vec<DispatchType<'static>> {
         ForceKillActiveWindow,
         CloseWindow(WindowIdentifier::Address(Address::new("55a"))),
         Workspace(workspace()),
+        ShowWorkspace(workspace()),
         MoveToWorkspace(workspace(), Some(window())),
         MoveToWorkspaceSilent(workspace(), None),
         ToggleFloating(Some(window())),

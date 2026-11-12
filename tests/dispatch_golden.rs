@@ -781,6 +781,17 @@ fn top_level_dispatchers() {
 }
 
 #[test]
+fn workspace_show_is_058_lua_only() {
+    assert!(
+        gen_dispatch_str(
+            DispatchType::ShowWorkspace(WorkspaceIdentifierWithSpecial::Id(3)),
+            true
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn removed_fakefullscreen_is_rejected() {
     assert!(gen_dispatch_str(DispatchType::ToggleFakeFullscreen, true).is_err());
 }
