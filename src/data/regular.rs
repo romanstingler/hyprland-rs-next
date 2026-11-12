@@ -793,6 +793,9 @@ pub struct Mouse {
     pub address: Address,
     /// The mouse's name
     pub name: String,
+    /// The libinput sysname (`event*`), added upstream for 0.58
+    #[serde(default)]
+    pub sysname: Option<String>,
 }
 
 /// This struct holds information about a keyboard device
@@ -802,6 +805,9 @@ pub struct Keyboard {
     pub address: Address,
     /// The keyboard's name
     pub name: String,
+    /// The libinput sysname (`event*`), added upstream for 0.58
+    #[serde(default)]
+    pub sysname: Option<String>,
     /// The keyboard rules
     pub rules: String,
     /// The keyboard model
@@ -859,6 +865,9 @@ pub struct Tablet {
     pub belongs_to: Option<TabletBelongsTo>,
     /// The name of the tablet
     pub name: Option<String>,
+    /// The libinput sysname (`event*`), added upstream for 0.58
+    #[serde(default)]
+    pub sysname: Option<String>,
 }
 
 /// This struct holds all current devices
@@ -1527,5 +1536,22 @@ mod coord_tests {
     #[test]
     fn ordinary_values_still_work() {
         assert_eq!(parse_coords(r#"{"at":[1124,32]}"#).unwrap(), (1124, 32));
+    }
+}
+
+#[cfg(test)]
+mod device_tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    #[test]
+    fn mouse_sysname_is_optional() {
+        let device: Mouse =
+            serde_json::from_str(r#"{"address":"0x1","name":"mouse","sysname":"event1"}"#).unwrap();
+        assert_eq!(device.sysname.as_deref(), Some("event1"));
+
+        let device: Mouse = serde_json::from_str(r#"{"address":"0x1","name":"mouse"}"#).unwrap();
+        assert_eq!(device.sysname, None);
     }
 }
